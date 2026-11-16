@@ -38,12 +38,12 @@
     background: var(--card); border-radius: 14px; padding: 16px; margin-bottom: 14px;
     box-shadow: 0 1px 4px rgba(9,30,66,0.08); border: 1px solid var(--border);
   }
-  .card-title { margin: 0 0 12px; font-size: 15px; font-weight: 700; color: var(--text); display: flex; justify-content: space-between; align-items: center; }
+  .card-title { margin: 0 0 12px; font-size: 15px; font-weight: 700; color: var(--text); display: flex; justify-content: space-between; align-items: center; gap: 6px; }
   .hero-box {
     background: linear-gradient(135deg, #091E42, #172B4D); color: #fff; border-radius: 16px; padding: 18px; margin-bottom: 14px;
   }
   .hero-top { display: flex; justify-content: space-between; align-items: flex-start; }
-  .badge-lvl { background: var(--primary); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+  .badge-lvl { background: var(--primary); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
   .rate-box { text-align: right; font-size: 12px; opacity: 0.9; }
   .rate-box strong { display: block; font-size: 15px; color: #57D9A3; }
   .cupo-amount { font-size: 36px; font-weight: 800; margin: 10px 0 2px; }
@@ -87,13 +87,26 @@
   .alert-ok { background: #E3FCEF; color: #006644; }
   .hidden { display: none !important; }
   .item-box { border: 1px solid var(--border); border-radius: 11px; padding: 12px; margin-bottom: 10px; background: #FAFBFC; }
-  .lvl-row { display: grid; grid-template-columns: 38px 1fr 1fr 1fr 1.2fr 30px; gap: 4px; align-items: center; margin-bottom: 8px; }
-  .lvl-row input, .lvl-row select { padding: 8px 4px; font-size: 12px; text-align: center; }
+  .lvl-card-cfg { border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 10px; background: #FAFBFC; }
+  .lvl-grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1.2fr; gap: 5px; margin-top: 6px; }
+  .lvl-grid-4 input, .lvl-grid-4 select { padding: 8px 4px; font-size: 12px; text-align: center; }
   .inst-item {
-    display: flex; justify-content: space-between; align-items: center; padding: 9px 10px;
-    border-radius: 9px; border: 1px solid var(--border); margin-bottom: 6px; background: #fff; font-size: 12px;
+    display: flex; justify-content: space-between; align-items: center; padding: 10px;
+    border-radius: 9px; border: 1px solid var(--border); margin-bottom: 6px; background: #fff; font-size: 12px; gap: 8px;
   }
   .inst-item.next-due { border-color: var(--primary); background: #F0FFF8; }
+  .inst-item.paid-row { background: #F8FAFC; opacity: 0.9; }
+  .lvl-showcase {
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
+    background: #FAFBFC; display: flex; justify-content: space-between; align-items: center;
+  }
+  .lvl-showcase.current { border: 2px solid var(--primary); background: #F0FFF8; }
+  .lvl-showcase.locked { opacity: 0.72; }
+  .summary-strip {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; background: #F4F5F7;
+    padding: 8px; border-radius: 10px; margin-bottom: 10px; text-align: center; font-size: 11px;
+  }
+  .summary-strip strong { display: block; font-size: 13px; color: var(--text); margin-top: 2px; }
   .toast {
     position: fixed; top: 72px; left: 50%; transform: translateX(-50%); background: #172B4D; color: #fff;
     padding: 10px 18px; border-radius: 25px; font-size: 13px; font-weight: 600; z-index: 9999;
@@ -103,7 +116,7 @@
     position: fixed; inset: 0; background: rgba(9,30,66,0.65); z-index: 500;
     display: flex; align-items: center; justify-content: center; padding: 16px;
   }
-  .modal { background: #fff; border-radius: 16px; padding: 18px; width: 100%; max-width: 400px; max-height: 90vh; overflow-y: auto; }
+  .modal { background: #fff; border-radius: 16px; padding: 18px; width: 100%; max-width: 420px; max-height: 90vh; overflow-y: auto; }
   .preview-img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 10px; margin-top: 8px; border: 1px solid var(--border); }
 </style>
 </head>
@@ -128,7 +141,7 @@
   <div class="card">
     <div style="font-size:34px;margin-bottom:8px;">⏳</div>
     <strong>Sincronizando con CrediCupo...</strong>
-    <p style="font-size:13px;color:var(--muted);">Cargando tasa BCV y cuotas en tiempo real</p>
+    <p style="font-size:13px;color:var(--muted);">Cargando niveles, tasa BCV y cuotas en tiempo real</p>
   </div>
 </div>
 
@@ -221,7 +234,7 @@
     <div class="hero-top">
       <div>
         <div style="font-size:13px;opacity:0.85;">Hola, <strong id="cliName">Cliente</strong></div>
-        <div style="margin-top:4px;"><span class="badge-lvl" id="cliLvlBadge">Nivel 1</span></div>
+        <div style="margin-top:4px;"><span class="badge-lvl" id="cliLvlBadge">Nivel 1 • Burusa</span></div>
       </div>
       <div class="rate-box">
         Tasa BCV hoy
@@ -236,9 +249,9 @@
       <strong id="cliProgText">0 / 5 préstamos</strong>
     </div>
     <div class="progress-wrap"><div class="progress-bar" id="cliProgBar" style="width:0%"></div></div>
-    <div class="row" style="font-size:11px;opacity:0.8;margin-top:6px;">
+    <div class="row" style="font-size:11px;opacity:0.85;margin-top:6px;">
       <span id="cliDailyText">Solicitudes hoy: 0/3</span>
-      <span id="cliNextLvlText">Meta: Nivel 2</span>
+      <span id="cliNextLvlText">Siguiente: Basurita</span>
     </div>
   </div>
 
@@ -252,6 +265,7 @@
   <div id="cliRequestBox" class="card hidden">
     <h3 class="card-title">Solicitar Micropréstamo en Cuotas</h3>
     <div style="background:#FAFBFC;padding:12px;border-radius:10px;border:1px solid var(--border);font-size:13px;line-height:1.6;">
+      <div class="row"><span>Tu nivel actual:</span><strong id="reqLvlName">Nivel 1 • Burusa</strong></div>
       <div class="row"><span>Monto a recibir:</span><strong id="reqRecUsd">$1.00 (Bs. 0.00)</strong></div>
       <div class="row"><span>Interés (<span id="reqPct">25</span>%):</span><strong id="reqIntUsd">$0.25</strong></div>
       <div class="row" style="border-top:1px dashed var(--border);margin-top:6px;padding-top:6px;font-size:14px;">
@@ -262,6 +276,18 @@
       <div class="row"><span>Destino:</span><strong id="reqDest">Pago Móvil</strong></div>
     </div>
     <button class="btn btn-primary" onclick="requestLoan()">Confirmar y Pedir Préstamo</button>
+  </div>
+
+  <!-- ESCALA DE NIVELES PARA EL CLIENTE -->
+  <div class="card">
+    <div class="card-title" style="margin-bottom:8px;">
+      <span>🏆 Niveles y Cupos Disponibles</span>
+      <button class="btn btn-sm btn-secondary" id="btnToggleLevels" onclick="toggleClientLevels()">Ver todos</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;" id="cliLevelsHint">
+      Completa <strong id="cliPaysReqHint">5</strong> préstamos pagados a tiempo para subir al siguiente nivel.
+    </div>
+    <div id="cliLevelsList" class="hidden"></div>
   </div>
 
   <!-- HISTORIAL CLIENTE -->
@@ -287,6 +313,10 @@
 
   <!-- TAB PRÉSTAMOS -->
   <div id="admPaneLoans">
+    <div class="tabs" style="margin-bottom:10px;background:#E2E8F0;">
+      <button class="tab active" id="subTabActiveLoans" onclick="switchLoanFilter('active')">En Curso / Pendientes</button>
+      <button class="tab" id="subTabAllLoans" onclick="switchLoanFilter('all')">Todos (<span id="cntAllLoans">0</span>)</button>
+    </div>
     <div id="admLoansList"></div>
   </div>
 
@@ -355,12 +385,12 @@
       <input type="text" id="cfgClosedMsg">
 
       <h3 class="card-title" style="margin-top:18px;">
-        Niveles y Cuotas
-        <button class="btn btn-sm btn-primary" onclick="addLevelRow()">+ Agregar Nivel</button>
+        Niveles, Nombres y Cuotas
+        <div style="display:flex;gap:5px;">
+          <button class="btn btn-sm btn-secondary" onclick="resetDefaultLevels()">Cargar mis 10</button>
+          <button class="btn btn-sm btn-primary" onclick="addLevelRow()">+ Nivel</button>
+        </div>
       </h3>
-      <div style="font-size:10px;color:var(--muted);display:grid;grid-template-columns:38px 1fr 1fr 1fr 1.2fr 30px;gap:4px;text-align:center;margin-bottom:4px;">
-        <span>Nivel</span><span>Cupo $</span><span>Int %</span><span>Cuotas</span><span>Frecuencia</span><span></span>
-      </div>
       <div id="cfgLevelsWrap"></div>
 
       <button class="btn btn-primary" onclick="saveAdminConfig()">Guardar Todos los Cambios</button>
@@ -410,6 +440,19 @@
     window.Telegram.WebApp.expand();
   }
 
+  const CUSTOM_10_LEVELS = [
+    { lvl: 1,  name: "Burusa",         amount: 1,  pct: 25, quotas: 2, freq: "semanal" },
+    { lvl: 2,  name: "Basurita",       amount: 2,  pct: 25, quotas: 2, freq: "semanal" },
+    { lvl: 3,  name: "Arena",          amount: 4,  pct: 24, quotas: 2, freq: "semanal" },
+    { lvl: 4,  name: "Grava",          amount: 6,  pct: 24, quotas: 3, freq: "semanal" },
+    { lvl: 5,  name: "Piedra",         amount: 10, pct: 23, quotas: 2, freq: "quincenal" },
+    { lvl: 6,  name: "Muro",           amount: 15, pct: 22, quotas: 2, freq: "quincenal" },
+    { lvl: 7,  name: "Cerro",          amount: 20, pct: 22, quotas: 3, freq: "quincenal" },
+    { lvl: 8,  name: "Montaña",        amount: 25, pct: 21, quotas: 3, freq: "quincenal" },
+    { lvl: 9,  name: "Pico del Ávila", amount: 30, pct: 20, quotas: 4, freq: "quincenal" },
+    { lvl: 10, name: "Salto Ángel",    amount: 40, pct: 20, quotas: 4, freq: "quincenal" }
+  ];
+
   const DEFAULT_CFG = {
     appName: "CrediCupo Express",
     adminPin: "7788",
@@ -423,14 +466,7 @@
     ownerPm: "BDV (0102) • V-12345678 • 0414-0000000",
     ownerBin: "pagos@credicupo.com",
     closedMsg: "Cupos agotados por ahora. Pronto abriremos nuevos lugares.",
-    levels: [
-      { lvl: 1, amount: 1, pct: 25, quotas: 2, freq: "semanal" },
-      { lvl: 2, amount: 3, pct: 25, quotas: 2, freq: "semanal" },
-      { lvl: 3, amount: 5, pct: 24, quotas: 3, freq: "semanal" },
-      { lvl: 4, amount: 10, pct: 23, quotas: 2, freq: "quincenal" },
-      { lvl: 5, amount: 25, pct: 22, quotas: 3, freq: "quincenal" },
-      { lvl: 6, amount: 30, pct: 21, quotas: 4, freq: "quincenal" }
-    ]
+    levels: CUSTOM_10_LEVELS
   };
 
   let state = {
@@ -440,7 +476,10 @@
     currentUserCedula: localStorage.getItem("cc_session_cedula") || null,
     isAdmin: false,
     loadedCfg: false,
-    autoFetchedOnce: false
+    autoFetchedOnce: false,
+    loanFilter: "active",
+    expandedLoans: {},
+    showAllClientLevels: false
   };
 
   let tempPhotos = {};
@@ -687,12 +726,14 @@
     refreshUI();
   };
 
-  // PANEL CLIENTE CON CUOTAS
+  // HELPER NIVELES CON NOMBRE
   function getLevelRule(lvl) {
     const lvls = state.cfg.levels || DEFAULT_CFG.levels;
     const raw = lvls.find(x => Number(x.lvl) === Number(lvl)) || lvls[lvls.length - 1];
+    const num = Number(raw.lvl);
     return {
-      lvl: Number(raw.lvl),
+      lvl: num,
+      name: (raw.name && raw.name.trim()) ? raw.name.trim() : `Nivel ${num}`,
       amount: Number(raw.amount) || 1,
       pct: Number(raw.pct) || 25,
       quotas: Number(raw.quotas) || 2,
@@ -700,22 +741,68 @@
     };
   }
 
+  window.toggleClientLevels = () => {
+    state.showAllClientLevels = !state.showAllClientLevels;
+    renderClientLevelsList();
+  };
+
+  function renderClientLevelsList() {
+    const u = state.users[state.currentUserCedula];
+    if (!u) return;
+    const wrap = document.getElementById("cliLevelsList");
+    const btn = document.getElementById("btnToggleLevels");
+    btn.textContent = state.showAllClientLevels ? "Ocultar" : "Ver todos";
+    wrap.classList.toggle("hidden", !state.showAllClientLevels);
+
+    const rate = Number(state.cfg.rate) || 1;
+    const lvls = state.cfg.levels || DEFAULT_CFG.levels;
+    wrap.innerHTML = lvls.map((raw, idx) => {
+      const r = getLevelRule(raw.lvl || (idx + 1));
+      const isCurrent = Number(u.level) === r.lvl;
+      const isUnlocked = Number(u.level) >= r.lvl;
+      const freqTxt = r.freq === "quincenal" ? "quincenales" : "semanales";
+      return `
+        <div class="lvl-showcase ${isCurrent ? 'current' : !isUnlocked ? 'locked' : ''}">
+          <div>
+            <div style="font-size:13px;font-weight:700;">
+              ${isCurrent ? '⭐ ' : isUnlocked ? '✅ ' : '🔒 '}Nivel ${r.lvl} • ${r.name}
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px;">
+              ${r.quotas} cuotas ${freqTxt} • Interés ${r.pct}%
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <strong style="font-size:15px;color:var(--primary);">$${r.amount.toFixed(2)}</strong>
+            <div style="font-size:11px;color:var(--muted);">Bs. ${(r.amount * rate).toFixed(2)}</div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // PANEL CLIENTE CON CUOTAS DETALLADAS Y NIVELES
   function renderClientView() {
     const u = state.users[state.currentUserCedula];
     if (!u) return;
     const rate = Number(state.cfg.rate) || 1;
     const rule = getLevelRule(u.level);
+    const lvls = state.cfg.levels || DEFAULT_CFG.levels;
+    const hasNextLvl = lvls.some(x => Number(x.lvl) === Number(u.level) + 1);
+    const nextRule = hasNextLvl ? getLevelRule(Number(u.level) + 1) : null;
     const paysReq = Number(state.cfg.paysPerLvl) || 5;
     const progInLvl = u.paidCount % paysReq;
 
     document.getElementById("cliName").textContent = u.nombre.split(" ")[0];
-    document.getElementById("cliLvlBadge").textContent = `Nivel ${u.level}`;
+    document.getElementById("cliLvlBadge").textContent = `Nivel ${rule.lvl} • ${rule.name}`;
     document.getElementById("cliRateDisplay").textContent = `Bs. ${rate.toFixed(2)}`;
     document.getElementById("cliCupoUsd").textContent = `$${rule.amount.toFixed(2)}`;
     document.getElementById("cliCupoBs").textContent = `= Bs. ${(rule.amount * rate).toFixed(2)}`;
-    document.getElementById("cliProgText").textContent = `${progInLvl} / ${paysReq} préstamos`;
-    document.getElementById("cliProgBar").style.width = `${Math.min(100, (progInLvl / paysReq) * 100)}%`;
-    document.getElementById("cliNextLvlText").textContent = `Meta: Nivel ${u.level + 1}`;
+    document.getElementById("cliProgText").textContent = nextRule ? `${progInLvl} / ${paysReq} préstamos` : "¡Nivel máximo alcanzado!";
+    document.getElementById("cliProgBar").style.width = nextRule ? `${Math.min(100, (progInLvl / paysReq) * 100)}%` : "100%";
+    document.getElementById("cliNextLvlText").textContent = nextRule ? `Meta: ${nextRule.name} ($${nextRule.amount})` : "Tope máximo";
+    document.getElementById("cliPaysReqHint").textContent = paysReq;
+
+    renderClientLevelsList();
 
     const myLoans = Object.values(state.loans).filter(l => l.cedula === u.cedula).sort((a,b) => b.createdAt - a.createdAt);
     const todayStr = new Date().toLocaleDateString();
@@ -755,6 +842,8 @@
         const nextInst = schedule.find(s => s.status === "pendiente" || s.status === "revision");
         const isLate = nextInst && nextInst.status === "pendiente" && Date.now() > nextInst.dueDate;
         const paidCountInst = schedule.filter(s => s.status === "pagado").length;
+        const paidTotalUsd = schedule.filter(s => s.status === "pagado").reduce((acc, x) => acc + Number(x.amount), 0);
+        const remTotalUsd = Math.max(0, Number(openLoan.totalDue) - paidTotalUsd);
 
         const scheduleHtml = schedule.map(s => {
           const isNext = nextInst && s.num === nextInst.num;
@@ -766,13 +855,19 @@
               : Date.now() > s.dueDate
                 ? `<span class="pill pill-mor">VENCIDA</span>`
                 : `<span class="pill pill-act">PENDIENTE</span>`;
+          const extraLine = s.status === "pagado"
+            ? `<div style="font-size:11px;color:#006644;margin-top:2px;">Pagada${s.payRef ? ` • Ref: ${s.payRef}` : ''}${s.confirmedAt ? ` (${new Date(s.confirmedAt).toLocaleDateString()})` : ''}</div>`
+            : s.status === "revision"
+              ? `<div style="font-size:11px;color:#974F0C;margin-top:2px;">Comprobante enviado • Ref: ${s.payRef}</div>`
+              : "";
           return `
-            <div class="inst-item ${isNext ? 'next-due' : ''}">
+            <div class="inst-item ${isNext ? 'next-due' : s.status === 'pagado' ? 'paid-row' : ''}">
               <div>
                 <strong>Cuota ${s.num} de ${openLoan.quotas}</strong> • Vence: ${new Date(s.dueDate).toLocaleDateString()}<br>
                 <span style="color:var(--primary);font-weight:700;">$${s.amount.toFixed(2)} (Bs. ${bVal})</span>
+                ${extraLine}
               </div>
-              ${badge}
+              <div>${badge}</div>
             </div>`;
         }).join("");
 
@@ -803,9 +898,14 @@
 
         actBox.innerHTML = `
           <h3 class="card-title">
-            Plan de Cuotas (${paidCountInst}/${openLoan.quotas})
+            <span>Tus Cuotas (${paidCountInst}/${openLoan.quotas} pagadas)</span>
             ${isLate ? '<span class="pill pill-mor">CUOTA VENCIDA</span>' : '<span class="pill pill-act">AL DÍA</span>'}
           </h3>
+          <div class="summary-strip">
+            <div>Total Plan<strong>$${Number(openLoan.totalDue).toFixed(2)}</strong></div>
+            <div>Pagado<strong style="color:var(--primary);">$${paidTotalUsd.toFixed(2)}</strong></div>
+            <div>Restante<strong style="color:#0747A6;">$${remTotalUsd.toFixed(2)}</strong></div>
+          </div>
           <div style="margin-bottom:8px;">${scheduleHtml}</div>
           ${payFormHtml}
         `;
@@ -823,6 +923,7 @@
         const freqLabel = rule.freq === "quincenal" ? "Quincenales (cada 15 días)" : "Semanales (cada 7 días)";
 
         reqBox.classList.remove("hidden");
+        document.getElementById("reqLvlName").textContent = `Nivel ${rule.lvl} • ${rule.name}`;
         document.getElementById("reqRecUsd").textContent = `$${recUsd.toFixed(2)} (Bs. ${(recUsd * rate).toFixed(2)})`;
         document.getElementById("reqPct").textContent = rule.pct;
         document.getElementById("reqIntUsd").textContent = `$${intUsd.toFixed(2)}`;
@@ -866,6 +967,7 @@
 
     await setDoc(doc(db, "loans", id), {
       id, cedula: u.cedula, nombre: u.nombre, phone: u.phone, payInfo: u.payInfo,
+      level: rule.lvl, levelName: rule.name,
       amount, totalDue, quotas, freq, stepDays, quotaAmount, pct: rule.pct,
       status: "pendiente", createdAt: Date.now(), schedule: []
     });
@@ -891,7 +993,7 @@
     showToast(`Comprobante de Cuota ${instNum} enviado`);
   };
 
-  // PANEL ADMIN
+  // PANEL ADMIN CON DESGLOSE DE TODAS LAS CUOTAS EN CURSO
   window.switchAdminTab = (tab) => {
     document.getElementById("admTabLoans").classList.toggle("active", tab === "loans");
     document.getElementById("admTabUsers").classList.toggle("active", tab === "users");
@@ -899,6 +1001,18 @@
     document.getElementById("admPaneLoans").classList.toggle("hidden", tab !== "loans");
     document.getElementById("admPaneUsers").classList.toggle("hidden", tab !== "users");
     document.getElementById("admPaneCfg").classList.toggle("hidden", tab !== "cfg");
+  };
+
+  window.switchLoanFilter = (filter) => {
+    state.loanFilter = filter;
+    document.getElementById("subTabActiveLoans").classList.toggle("active", filter === "active");
+    document.getElementById("subTabAllLoans").classList.toggle("active", filter === "all");
+    renderAdminAll();
+  };
+
+  window.toggleAdminLoanDetail = (id) => {
+    state.expandedLoans[id] = !state.expandedLoans[id];
+    renderAdminAll();
   };
 
   function renderAdminAll() {
@@ -915,23 +1029,29 @@
     });
     const capDisp = Number(state.cfg.capital) - enCalle + ganancia;
 
+    const activeLoansList = allLoans.filter(l => l.status !== "pagado" && l.status !== "rechazado");
     document.getElementById("admCapDisp").textContent = `$${capDisp.toFixed(2)}`;
     document.getElementById("admEnCalle").textContent = `$${enCalle.toFixed(2)}`;
     document.getElementById("admGanancia").textContent = `$${ganancia.toFixed(2)}`;
-    document.getElementById("cntLoans").textContent = allLoans.filter(l => l.status !== "pagado" && l.status !== "rechazado").length;
+    document.getElementById("cntLoans").textContent = activeLoansList.length;
+    document.getElementById("cntAllLoans").textContent = allLoans.length;
     document.getElementById("cntUsers").textContent = allUsers.length;
 
+    const visibleLoans = state.loanFilter === "active" ? activeLoansList : allLoans;
     const lWrap = document.getElementById("admLoansList");
-    if (!allLoans.length) {
-      lWrap.innerHTML = `<div class="card" style="text-align:center;color:var(--muted);">Aún no hay solicitudes de préstamo.</div>`;
+    if (!visibleLoans.length) {
+      lWrap.innerHTML = `<div class="card" style="text-align:center;color:var(--muted);">No hay préstamos en esta vista.</div>`;
     } else {
-      lWrap.innerHTML = allLoans.map(l => {
+      lWrap.innerHTML = visibleLoans.map(l => {
         const rate = Number(state.cfg.rate) || 1;
         const sch = l.schedule || [];
         const revInst = sch.find(s => s.status === "revision");
         const nextPend = sch.find(s => s.status === "pendiente");
         const paidCnt = sch.filter(s => s.status === "pagado").length;
-        const isLate = nextPend && Date.now() > nextPend.dueDate && l.status === "activo";
+        const paidUsd = sch.filter(s => s.status === "pagado").reduce((acc, x) => acc + Number(x.amount), 0);
+        const remUsd = Math.max(0, Number(l.totalDue) - paidUsd);
+        const isLate = nextPend && Date.now() > nextPend.dueDate && (l.status === "activo" || l.status === "pagando");
+        const isExpanded = state.expandedLoans[l.id] !== undefined ? state.expandedLoans[l.id] : (l.status === "activo" || l.status === "pagando");
 
         let actions = "";
         if (l.status === "pendiente") {
@@ -944,9 +1064,62 @@
             <button class="btn btn-sm btn-secondary" onclick="openPhoto('${revInst.payProof}', 'Cuota ${revInst.num} • Ref: ${revInst.payRef}')">Ver Comprobante C${revInst.num}</button>
             <button class="btn btn-sm btn-primary" onclick="confirmInstallment('${l.id}', ${revInst.num})">Aprobar Cuota ${revInst.num}</button>
           `;
-        } else if (nextPend && l.status === "activo") {
-          actions = `<button class="btn btn-sm btn-warn" onclick="confirmInstallment('${l.id}', ${nextPend.num})">Marcar Cuota ${nextPend.num} Pagada</button>`;
         }
+
+        let scheduleDetailHtml = "";
+        if (sch.length > 0) {
+          const rowsHtml = sch.map(s => {
+            const bVal = (Number(s.amount) * rate).toFixed(2);
+            const lateRow = s.status === "pendiente" && Date.now() > s.dueDate;
+            const stBadge = s.status === "pagado"
+              ? `<span class="pill pill-pag">PAGADA</span>`
+              : s.status === "revision"
+                ? `<span class="pill pill-pend">REVISIÓN</span>`
+                : lateRow
+                  ? `<span class="pill pill-mor">VENCIDA</span>`
+                  : `<span class="pill pill-act">PENDIENTE</span>`;
+
+            let rowBtn = "";
+            if (s.status === "revision") {
+              rowBtn = `
+                <button class="btn btn-sm btn-secondary" style="padding:4px 7px;font-size:11px;" onclick="openPhoto('${s.payProof}', 'Cuota ${s.num} • Ref: ${s.payRef}')">Foto</button>
+                <button class="btn btn-sm btn-primary" style="padding:4px 7px;font-size:11px;" onclick="confirmInstallment('${l.id}', ${s.num})">OK</button>
+              `;
+            } else if (s.status === "pendiente") {
+              rowBtn = `<button class="btn btn-sm btn-warn" style="padding:4px 7px;font-size:11px;" onclick="confirmInstallment('${l.id}', ${s.num})">Cobrar</button>`;
+            }
+
+            return `
+              <div class="inst-item" style="padding:7px 8px;margin-bottom:5px;">
+                <div style="line-height:1.35;">
+                  <strong>C${s.num}/${l.quotas}</strong> • $${Number(s.amount).toFixed(2)} (Bs. ${bVal})<br>
+                  <span style="font-size:11px;color:var(--muted);">Vence: ${new Date(s.dueDate).toLocaleDateString()}${s.payRef ? ` • Ref: ${s.payRef}` : ''}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:4px;">
+                  ${stBadge}
+                  ${rowBtn}
+                </div>
+              </div>
+            `;
+          }).join("");
+
+          scheduleDetailHtml = `
+            <div style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px;">
+              <div class="row" style="margin-bottom:6px;">
+                <span style="font-size:11px;font-weight:700;color:var(--text);">
+                  Cobrado: $${paidUsd.toFixed(2)} • Falta: $${remUsd.toFixed(2)}
+                </span>
+                <button class="btn btn-sm btn-secondary" style="padding:4px 8px;font-size:11px;" onclick="toggleAdminLoanDetail('${l.id}')">
+                  ${isExpanded ? 'Ocultar cuotas ▲' : 'Ver cuotas ▼'}
+                </button>
+              </div>
+              <div class="${isExpanded ? '' : 'hidden'}">${rowsHtml}</div>
+            </div>
+          `;
+        }
+
+        const userObj = state.users[l.cedula];
+        const lvlTag = l.levelName ? `${l.levelName}` : (userObj ? getLevelRule(userObj.level).name : `Nivel ${l.level || 1}`);
 
         return `
           <div class="item-box">
@@ -955,12 +1128,14 @@
               <span class="pill ${l.status === 'pagado' ? 'pill-pag' : isLate ? 'pill-mor' : 'pill-pend'}">${isLate ? 'MORA' : l.status.toUpperCase()}</span>
             </div>
             <div style="font-size:12px;margin:6px 0;line-height:1.5;">
+              Nivel: <strong>${lvlTag}</strong> • Tel: <a href="https://wa.me/58${l.phone.replace(/^0/,'')}" target="_blank" style="color:var(--primary);font-weight:700;">${l.phone}</a><br>
               Prestar: <strong>$${l.amount.toFixed(2)} (Bs. ${(l.amount * rate).toFixed(2)})</strong> • Total: <strong>$${l.totalDue.toFixed(2)}</strong><br>
-              Plan: <strong>${l.quotas || 1} cuotas ${l.freq || 'semanal'}es</strong> de <strong>$${(l.quotaAmount || l.totalDue).toFixed(2)}</strong> (Pagadas: ${paidCnt}/${l.quotas || 1})<br>
+              Plan: <strong>${l.quotas || 1} cuotas ${l.freq || 'semanal'}es</strong> de <strong>$${(l.quotaAmount || l.totalDue).toFixed(2)}</strong> (${paidCnt}/${l.quotas || 1} pagadas)<br>
               Cuenta: <strong>${l.payInfo}</strong>
               ${revInst ? `<br>Pago reportado Cuota ${revInst.num} • Ref: <strong>${revInst.payRef}</strong>` : ""}
             </div>
             <div class="row" style="justify-content:flex-start;flex-wrap:wrap;">${actions}</div>
+            ${scheduleDetailHtml}
           </div>
         `;
       }).join("");
@@ -976,22 +1151,26 @@
       uWrap.innerHTML = `<div class="card" style="text-align:center;color:var(--muted);">No hay clientes registrados.</div>`;
       return;
     }
-    uWrap.innerHTML = list.map(u => `
-      <div class="item-box">
-        <div class="row">
-          <strong>${u.nombre} (V-${u.cedula})</strong>
-          <span class="badge-lvl">Nivel ${u.level}</span>
+    uWrap.innerHTML = list.map(u => {
+      const r = getLevelRule(u.level);
+      return `
+        <div class="item-box">
+          <div class="row">
+            <strong>${u.nombre} (V-${u.cedula})</strong>
+            <span class="badge-lvl">Nivel ${r.lvl} • ${r.name}</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin:4px 0 8px;">
+            Tel: ${u.phone} • Préstamos pagados: ${u.paidCount} • PIN: ${u.pin}<br>${u.payInfo}
+          </div>
+          <div class="row" style="justify-content:flex-start;flex-wrap:wrap;">
+            <button class="btn btn-sm btn-secondary" onclick="openPhoto('${u.idPhoto}', 'Cédula de ${u.nombre}')">Ver Cédula</button>
+            <button class="btn btn-sm btn-primary" onclick="changeUserLvl('${u.cedula}', 1)">+ Nivel</button>
+            <button class="btn btn-sm btn-secondary" onclick="changeUserLvl('${u.cedula}', -1)">- Nivel</button>
+            <button class="btn btn-sm ${u.blocked ? 'btn-primary' : 'btn-danger'}" onclick="toggleBlockUser('${u.cedula}')">${u.blocked ? 'Desbloquear' : 'Bloquear'}</button>
+          </div>
         </div>
-        <div style="font-size:12px;color:var(--muted);margin:4px 0 8px;">
-          Tel: ${u.phone} • Préstamos pagados: ${u.paidCount} • PIN: ${u.pin}<br>${u.payInfo}
-        </div>
-        <div class="row" style="justify-content:flex-start;flex-wrap:wrap;">
-          <button class="btn btn-sm btn-secondary" onclick="openPhoto('${u.idPhoto}', 'Cédula de ${u.nombre}')">Ver Cédula</button>
-          <button class="btn btn-sm btn-primary" onclick="changeUserLvl('${u.cedula}', 1)">+ Nivel</button>
-          <button class="btn btn-sm ${u.blocked ? 'btn-primary' : 'btn-danger'}" onclick="toggleBlockUser('${u.cedula}')">${u.blocked ? 'Desbloquear' : 'Bloquear'}</button>
-        </div>
-      </div>
-    `).join("");
+      `;
+    }).join("");
   };
 
   window.approveLoan = async (id) => {
@@ -1009,6 +1188,7 @@
         status: "pendiente"
       });
     }
+    state.expandedLoans[id] = true;
     await setDoc(doc(db, "loans", id), { ...l, status: "activo", approvedAt: now, schedule });
     showToast(`Préstamo activado en ${quotas} cuotas`);
   };
@@ -1052,9 +1232,11 @@
 
   window.changeUserLvl = async (ced, delta) => {
     const u = state.users[ced];
-    const next = Math.max(1, (u.level || 1) + delta);
+    const maxLvl = (state.cfg.levels || DEFAULT_CFG.levels).length;
+    const next = Math.min(maxLvl, Math.max(1, (u.level || 1) + delta));
     await setDoc(doc(db, "users", ced), { ...u, level: next });
-    showToast(`Nivel actualizado a ${next}`);
+    const r = getLevelRule(next);
+    showToast(`Nivel actualizado a ${r.lvl} (${r.name})`);
   };
 
   window.toggleBlockUser = async (ced) => {
@@ -1071,7 +1253,7 @@
     document.getElementById("photoModal").classList.remove("hidden");
   };
 
-  // CONFIGURACIÓN ADMIN
+  // CONFIGURACIÓN ADMIN CON NOMBRE DE NIVELES
   window.toggleRateInput = () => {
     const isAuto = document.getElementById("cfgAutoRate").value === "true";
     document.getElementById("cfgRate").disabled = isAuto;
@@ -1092,49 +1274,75 @@
     document.getElementById("cfgOwnerPm").value = c.ownerPm;
     document.getElementById("cfgOwnerBin").value = c.ownerBin;
     document.getElementById("cfgClosedMsg").value = c.closedMsg;
-    renderLevelRows(c.levels || DEFAULT_CFG.levels);
+    renderLevelRows(c.levels || CUSTOM_10_LEVELS);
   }
+
+  window.resetDefaultLevels = () => {
+    renderLevelRows(CUSTOM_10_LEVELS);
+    showToast("10 niveles cargados. Dale a Guardar.");
+  };
 
   function renderLevelRows(levels) {
     const wrap = document.getElementById("cfgLevelsWrap");
-    wrap.innerHTML = levels.map((lv, idx) => `
-      <div class="lvl-row" data-idx="${idx}">
-        <strong style="text-align:center;font-size:11px;">Niv ${idx + 1}</strong>
-        <input type="number" step="0.5" class="lv-amt" value="${lv.amount}">
-        <input type="number" class="lv-pct" value="${lv.pct}">
-        <input type="number" class="lv-quo" value="${lv.quotas || 2}">
-        <select class="lv-freq">
-          <option value="semanal" ${(lv.freq || 'semanal') === 'semanal' ? 'selected' : ''}>Semanal</option>
-          <option value="quincenal" ${lv.freq === 'quincenal' ? 'selected' : ''}>Quincenal</option>
-        </select>
-        <button class="btn btn-sm btn-danger" style="padding:5px;" onclick="this.parentElement.remove()">X</button>
-      </div>
-    `).join("");
+    wrap.innerHTML = levels.map((lv, idx) => {
+      const lvlNum = idx + 1;
+      const defaultName = lv.name || `Nivel ${lvlNum}`;
+      return `
+        <div class="lvl-card-cfg" data-idx="${idx}">
+          <div class="row" style="margin-bottom:4px;">
+            <strong style="font-size:12px;color:var(--primary);">Nivel ${lvlNum}</strong>
+            <input type="text" class="lv-name" value="${defaultName}" placeholder="Nombre del nivel (ej: Burusa)" style="width:62%;padding:6px 8px;font-size:13px;">
+            <button class="btn btn-sm btn-danger" style="padding:5px 8px;" onclick="this.closest('.lvl-card-cfg').remove()">X</button>
+          </div>
+          <div style="font-size:10px;color:var(--muted);display:grid;grid-template-columns:1fr 1fr 1fr 1.2fr;gap:5px;text-align:center;">
+            <span>Cupo $</span><span>Interés %</span><span>Cuotas</span><span>Frecuencia</span>
+          </div>
+          <div class="lvl-grid-4">
+            <input type="number" step="0.5" class="lv-amt" value="${lv.amount}">
+            <input type="number" class="lv-pct" value="${lv.pct}">
+            <input type="number" class="lv-quo" value="${lv.quotas || 2}">
+            <select class="lv-freq">
+              <option value="semanal" ${(lv.freq || 'semanal') === 'semanal' ? 'selected' : ''}>Semanal</option>
+              <option value="quincenal" ${lv.freq === 'quincenal' ? 'selected' : ''}>Quincenal</option>
+            </select>
+          </div>
+        </div>
+      `;
+    }).join("");
   }
 
   window.addLevelRow = () => {
     const wrap = document.getElementById("cfgLevelsWrap");
     const count = wrap.children.length + 1;
     const div = document.createElement("div");
-    div.className = "lvl-row";
+    div.className = "lvl-card-cfg";
     div.innerHTML = `
-      <strong style="text-align:center;font-size:11px;">Niv ${count}</strong>
-      <input type="number" step="0.5" class="lv-amt" value="50">
-      <input type="number" class="lv-pct" value="20">
-      <input type="number" class="lv-quo" value="4">
-      <select class="lv-freq">
-        <option value="semanal">Semanal</option>
-        <option value="quincenal" selected>Quincenal</option>
-      </select>
-      <button class="btn btn-sm btn-danger" style="padding:5px;" onclick="this.parentElement.remove()">X</button>
+      <div class="row" style="margin-bottom:4px;">
+        <strong style="font-size:12px;color:var(--primary);">Nivel ${count}</strong>
+        <input type="text" class="lv-name" value="Nivel ${count}" placeholder="Nombre del nivel" style="width:62%;padding:6px 8px;font-size:13px;">
+        <button class="btn btn-sm btn-danger" style="padding:5px 8px;" onclick="this.closest('.lvl-card-cfg').remove()">X</button>
+      </div>
+      <div style="font-size:10px;color:var(--muted);display:grid;grid-template-columns:1fr 1fr 1fr 1.2fr;gap:5px;text-align:center;">
+        <span>Cupo $</span><span>Interés %</span><span>Cuotas</span><span>Frecuencia</span>
+      </div>
+      <div class="lvl-grid-4">
+        <input type="number" step="0.5" class="lv-amt" value="50">
+        <input type="number" class="lv-pct" value="20">
+        <input type="number" class="lv-quo" value="4">
+        <select class="lv-freq">
+          <option value="semanal">Semanal</option>
+          <option value="quincenal" selected>Quincenal</option>
+        </select>
+      </div>
     `;
     wrap.appendChild(div);
   };
 
   window.saveAdminConfig = async () => {
-    const rows = document.querySelectorAll("#cfgLevelsWrap .lvl-row");
+    const rows = document.querySelectorAll("#cfgLevelsWrap .lvl-card-cfg");
     const levels = Array.from(rows).map((r, i) => ({
       lvl: i + 1,
+      name: (r.querySelector(".lv-name").value || "").trim() || `Nivel ${i + 1}`,
       amount: parseFloat(r.querySelector(".lv-amt").value) || 1,
       pct: parseFloat(r.querySelector(".lv-pct").value) || 25,
       quotas: parseInt(r.querySelector(".lv-quo").value) || 2,
@@ -1165,7 +1373,7 @@
       state.autoFetchedOnce = false;
       syncBcvAutoRate();
     }
-    showToast("💾 ¡Cuotas y reglas guardadas en la nube!");
+    showToast("💾 ¡Tus 10 niveles y cuotas guardados en la nube!");
   };
 </script>
 </body>
