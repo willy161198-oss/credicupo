@@ -91,7 +91,7 @@
   .lvl-grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1.2fr; gap: 5px; margin-top: 6px; }
   .lvl-grid-4 input, .lvl-grid-4 select { padding: 8px 4px; font-size: 12px; text-align: center; }
   .inst-item {
-    display: flex; justify-content: space-between; align-items: center; padding: 10px;
+    display: flex; justify-content: space-between; align-items: center; padding: 9px 10px;
     border-radius: 9px; border: 1px solid var(--border); margin-bottom: 6px; background: #fff; font-size: 12px; gap: 8px;
   }
   .inst-item.next-due { border-color: var(--primary); background: #F0FFF8; }
@@ -261,20 +261,32 @@
   <!-- ESTADO DE SOLICITUD / PRÉSTAMO ACTIVO POR CUOTAS -->
   <div id="cliActiveLoanBox" class="card hidden"></div>
 
-  <!-- BOTÓN PEDIR NUEVO PRÉSTAMO -->
+  <!-- SOLICITAR NUEVO PRÉSTAMO CON SELECTOR Y VISTA PREVIA DE CUOTAS -->
   <div id="cliRequestBox" class="card hidden">
     <h3 class="card-title">Solicitar Micropréstamo en Cuotas</h3>
-    <div style="background:#FAFBFC;padding:12px;border-radius:10px;border:1px solid var(--border);font-size:13px;line-height:1.6;">
+
+    <label style="margin-top:0;">Elige en cuántas cuotas quieres pagar (máx. <span id="reqMaxQuotasLabel">2</span>)</label>
+    <select id="reqQuotaSelect" onchange="updateClientLoanPreview()"></select>
+
+    <div style="background:#FAFBFC;padding:12px;border-radius:10px;border:1px solid var(--border);font-size:13px;line-height:1.6;margin-top:10px;">
       <div class="row"><span>Tu nivel actual:</span><strong id="reqLvlName">Nivel 1 • Burusa</strong></div>
       <div class="row"><span>Monto a recibir:</span><strong id="reqRecUsd">$1.00 (Bs. 0.00)</strong></div>
       <div class="row"><span>Interés (<span id="reqPct">25</span>%):</span><strong id="reqIntUsd">$0.25</strong></div>
       <div class="row" style="border-top:1px dashed var(--border);margin-top:6px;padding-top:6px;font-size:14px;">
         <span>Total a devolver:</span><strong style="color:var(--primary);" id="reqTotUsd">$1.25 (Bs. 0.00)</strong>
       </div>
-      <div class="row"><span>Plan de pago:</span><strong id="reqPlanText">2 cuotas Semanales</strong></div>
+      <div class="row"><span>Plan elegido:</span><strong id="reqPlanText">2 cuotas Semanales</strong></div>
       <div class="row"><span>Valor de cada cuota:</span><strong style="color:#0747A6;" id="reqQuotaVal">$0.63 (Bs. 0.00)</strong></div>
       <div class="row"><span>Destino:</span><strong id="reqDest">Pago Móvil</strong></div>
     </div>
+
+    <div style="margin-top:12px;">
+      <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px;">
+        📅 Así quedarán tus fechas y cuotas:
+      </div>
+      <div id="reqSchedulePreview"></div>
+    </div>
+
     <button class="btn btn-primary" onclick="requestLoan()">Confirmar y Pedir Préstamo</button>
   </div>
 
@@ -385,7 +397,7 @@
       <input type="text" id="cfgClosedMsg">
 
       <h3 class="card-title" style="margin-top:18px;">
-        Niveles, Nombres y Cuotas
+        Niveles, Nombres y Cuotas Máx.
         <div style="display:flex;gap:5px;">
           <button class="btn btn-sm btn-secondary" onclick="resetDefaultLevels()">Cargar mis 10</button>
           <button class="btn btn-sm btn-primary" onclick="addLevelRow()">+ Nivel</button>
@@ -491,7 +503,8 @@
     autoFetchedOnce: false,
     loanFilter: "active",
     expandedLoans: {},
-    showAllClientLevels: false
+    showAllClientLevels: false,
+    selectedQuotasByUser: {}
   };
 
   let tempPhotos = {};
@@ -508,6 +521,16 @@
   function setOnlineStatus(ok) {
     document.getElementById("syncDot").style.background = ok ? "#57D9A3" : "#FF5630";
     document.getElementById("syncText").textContent = ok ? "En vivo • Sincronizado" : "Sin conexión a nube";
+  }
+
+  // HELPER FRECUENCIA Y DÍAS EXACTOS (QUINCENAL = 15 DÍAS, SEMANAL = 7 DÍAS)
+  function getLoanStepDays(loan) {
+    let freq = String(loan.freq || "").toLowerCase().trim();
+    if (!freq && loan.level) {
+      const r = getLevelRule(loan.level);
+      freq = String(r.freq || "").toLowerCase().trim();
+    }
+    return freq === "quincenal" ? 15 : 7;
   }
 
   // CANDADO DE SEGURIDAD CON CÓDIGO DE DUEÑO
@@ -554,15 +577,24 @@
     }
   };
 
-  // NORMALIZA PRÉSTAMOS ANTERIORES SIN SCHEDULE
+  // NORMALIZA PRÉSTAMOS ANTERIORES O PENDIENTES RESPETANDO 15 DÍAS (QUINCENAL) O 7 DÍAS (SEMANAL)
   function getNormalizedSchedule(loan) {
+    const stepDays = getLoanStepDays(loan);
+    const baseTime = Number(loan.approvedAt || loan.createdAt || Date.now());
+
     if (Array.isArray(loan.schedule) && loan.schedule.length > 0) {
-      return loan.schedule;
+      return loan.schedule.map((s, idx) => {
+        const num = Number(s.num) || (idx + 1);
+        return {
+          ...s,
+          num,
+          dueDate: baseTime + (num * stepDays * 86400000)
+        };
+      });
     }
+
     const qCount = Number(loan.quotas) || 1;
     const tot = Number(loan.totalDue) || Number(loan.amount) || 0;
-    const baseTime = Number(loan.approvedAt || loan.createdAt || Date.now());
-    const due = Number(loan.dueDate || (baseTime + 7 * 86400000));
     const st = loan.status === "pagado" ? "pagado" : (loan.status === "pagando" ? "revision" : "pendiente");
     const qAmt = Number((tot / qCount).toFixed(2));
     const arr = [];
@@ -570,7 +602,7 @@
       arr.push({
         num: i,
         amount: qAmt,
-        dueDate: i === 1 ? due : (baseTime + i * 7 * 86400000),
+        dueDate: baseTime + (i * stepDays * 86400000),
         status: st,
         payRef: loan.payRef || "",
         payProof: loan.payProof || "",
@@ -820,7 +852,7 @@
       amount: Number(raw.amount) || 1,
       pct: Number(raw.pct) || 25,
       quotas: Number(raw.quotas) || 2,
-      freq: raw.freq || "semanal"
+      freq: String(raw.freq || "semanal").toLowerCase().trim() === "quincenal" ? "quincenal" : "semanal"
     };
   }
 
@@ -843,7 +875,7 @@
       const r = getLevelRule(raw.lvl || (idx + 1));
       const isCurrent = Number(u.level) === r.lvl;
       const isUnlocked = Number(u.level) >= r.lvl;
-      const freqTxt = r.freq === "quincenal" ? "quincenales" : "semanales";
+      const freqTxt = r.freq === "quincenal" ? "quincenales (cada 15 días)" : "semanales (cada 7 días)";
       return `
         <div class="lvl-showcase ${isCurrent ? 'current' : !isUnlocked ? 'locked' : ''}">
           <div>
@@ -851,7 +883,7 @@
               ${isCurrent ? '⭐ ' : isUnlocked ? '✅ ' : '🔒 '}Nivel ${r.lvl} • ${r.name}
             </div>
             <div style="font-size:11px;color:var(--muted);margin-top:2px;">
-              ${r.quotas} cuotas ${freqTxt} • Interés ${r.pct}%
+              Hasta ${r.quotas} cuotas ${freqTxt} • Interés ${r.pct}%
             </div>
           </div>
           <div style="text-align:right;">
@@ -863,7 +895,54 @@
     }).join("");
   }
 
-  // PANEL CLIENTE CON CUOTAS DETALLADAS Y NIVELES
+  // VISTA PREVIA DINÁMICA ANTES DE PEDIR PRÉSTAMO (15 DÍAS QUINCENAL / 7 DÍAS SEMANAL)
+  window.updateClientLoanPreview = () => {
+    const u = state.users[state.currentUserCedula];
+    if (!u) return;
+    const rate = Number(state.cfg.rate) || 1;
+    const rule = getLevelRule(u.level);
+    const sel = document.getElementById("reqQuotaSelect");
+    const chosenQuotas = Math.min(rule.quotas, Math.max(1, parseInt(sel.value) || rule.quotas));
+    state.selectedQuotasByUser[u.cedula] = chosenQuotas;
+
+    const recUsd = rule.amount;
+    const intUsd = recUsd * (rule.pct / 100);
+    const totUsd = Number((recUsd + intUsd).toFixed(2));
+    const qUsd = Number((totUsd / chosenQuotas).toFixed(2));
+    const stepDays = rule.freq === "quincenal" ? 15 : 7;
+    const freqLabel = chosenQuotas === 1
+      ? `1 cuota única (vence en ${stepDays} días)`
+      : (rule.freq === "quincenal" ? `${chosenQuotas} cuotas Quincenales (cada 15 días)` : `${chosenQuotas} cuotas Semanales (cada 7 días)`);
+
+    document.getElementById("reqLvlName").textContent = `Nivel ${rule.lvl} • ${rule.name}`;
+    document.getElementById("reqRecUsd").textContent = `$${recUsd.toFixed(2)} (Bs. ${(recUsd * rate).toFixed(2)})`;
+    document.getElementById("reqPct").textContent = rule.pct;
+    document.getElementById("reqIntUsd").textContent = `$${intUsd.toFixed(2)}`;
+    document.getElementById("reqTotUsd").textContent = `$${totUsd.toFixed(2)} (Bs. ${(totUsd * rate).toFixed(2)})`;
+    document.getElementById("reqPlanText").textContent = freqLabel;
+    document.getElementById("reqQuotaVal").textContent = `$${qUsd.toFixed(2)} (Bs. ${(qUsd * rate).toFixed(2)})`;
+    document.getElementById("reqDest").textContent = u.payInfo;
+
+    const now = Date.now();
+    let previewRows = "";
+    for (let i = 1; i <= chosenQuotas; i++) {
+      const daysAhead = i * stepDays;
+      const dueStr = new Date(now + (daysAhead * 86400000)).toLocaleDateString();
+      const qBs = (qUsd * rate).toFixed(2);
+      previewRows += `
+        <div class="inst-item" style="padding:7px 10px;margin-bottom:5px;">
+          <div style="line-height:1.35;">
+            <strong>C${i}/${chosenQuotas}</strong> • $${qUsd.toFixed(2)} (Bs. ${qBs})<br>
+            <span style="font-size:11px;color:var(--muted);">Vence en ${daysAhead} días: <strong>${dueStr}</strong></span>
+          </div>
+          <span class="pill pill-act">PROGRAMADA</span>
+        </div>
+      `;
+    }
+    document.getElementById("reqSchedulePreview").innerHTML = previewRows;
+  };
+
+  // PANEL CLIENTE CON CUOTAS DETALLADAS ANTES Y DURANTE EL PRÉSTAMO
   function renderClientView() {
     const u = state.users[state.currentUserCedula];
     if (!u) return;
@@ -913,47 +992,59 @@
       reqBox.classList.add("hidden");
       actBox.classList.remove("hidden");
 
-      if (openLoan.status === "pendiente") {
-        actBox.innerHTML = `
-          <div style="text-align:center;padding:8px 0;">
-            <div style="font-size:34px;">⏳</div>
-            <h3 style="margin:6px 0;">Solicitud en Revisión</h3>
-            <p style="font-size:13px;color:var(--muted);">Pediste <strong>$${openLoan.amount.toFixed(2)} USD</strong> en <strong>${openLoan.quotas || 1} cuotas ${openLoan.freq || 'semanal'}es</strong>.<br>En breve te transferimos a:<br><strong>${openLoan.payInfo}</strong></p>
-          </div>`;
-      } else {
-        const schedule = getNormalizedSchedule(openLoan);
-        const totalQuotas = schedule.length;
-        const nextInst = schedule.find(s => s.status === "pendiente" || s.status === "revision");
-        const isLate = nextInst && nextInst.status === "pendiente" && Date.now() > nextInst.dueDate;
-        const paidCountInst = schedule.filter(s => s.status === "pagado").length;
-        const paidTotalUsd = schedule.filter(s => s.status === "pagado").reduce((acc, x) => acc + Number(x.amount), 0);
-        const remTotalUsd = Math.max(0, Number(openLoan.totalDue) - paidTotalUsd);
+      const schedule = getNormalizedSchedule(openLoan);
+      const totalQuotas = schedule.length;
+      const paidCountInst = schedule.filter(s => s.status === "pagado").length;
+      const paidTotalUsd = schedule.filter(s => s.status === "pagado").reduce((acc, x) => acc + Number(x.amount), 0);
+      const remTotalUsd = Math.max(0, Number(openLoan.totalDue) - paidTotalUsd);
 
-        const scheduleHtml = schedule.map(s => {
-          const isNext = nextInst && s.num === nextInst.num;
-          const bVal = (Number(s.amount) * rate).toFixed(2);
-          const badge = s.status === "pagado"
+      const scheduleHtml = schedule.map(s => {
+        const bVal = (Number(s.amount) * rate).toFixed(2);
+        const isPendingLoan = openLoan.status === "pendiente";
+        const badge = isPendingLoan
+          ? `<span class="pill pill-pend">POR APROBAR</span>`
+          : s.status === "pagado"
             ? `<span class="pill pill-pag">PAGADA</span>`
             : s.status === "revision"
               ? `<span class="pill pill-pend">EN REVISIÓN</span>`
               : Date.now() > s.dueDate
                 ? `<span class="pill pill-mor">VENCIDA</span>`
                 : `<span class="pill pill-act">PENDIENTE</span>`;
-          const extraLine = s.status === "pagado"
-            ? `<div style="font-size:11px;color:#006644;margin-top:2px;">Pagada${s.payRef ? ` • Ref: ${s.payRef}` : ''}${s.confirmedAt ? ` (${new Date(s.confirmedAt).toLocaleDateString()})` : ''}</div>`
-            : s.status === "revision"
-              ? `<div style="font-size:11px;color:#974F0C;margin-top:2px;">Comprobante enviado • Ref: ${s.payRef}</div>`
-              : "";
-          return `
-            <div class="inst-item ${isNext ? 'next-due' : s.status === 'pagado' ? 'paid-row' : ''}">
-              <div>
-                <strong>Cuota ${s.num} de ${totalQuotas}</strong> • Vence: ${new Date(s.dueDate).toLocaleDateString()}<br>
-                <span style="color:var(--primary);font-weight:700;">$${Number(s.amount).toFixed(2)} (Bs. ${bVal})</span>
-                ${extraLine}
-              </div>
-              <div>${badge}</div>
-            </div>`;
-        }).join("");
+        const extraLine = s.status === "pagado"
+          ? `<div style="font-size:11px;color:#006644;margin-top:2px;">Pagada${s.payRef ? ` • Ref: ${s.payRef}` : ''}${s.confirmedAt ? ` (${new Date(s.confirmedAt).toLocaleDateString()})` : ''}</div>`
+          : s.status === "revision"
+            ? `<div style="font-size:11px;color:#974F0C;margin-top:2px;">Comprobante enviado • Ref: ${s.payRef}</div>`
+            : "";
+        return `
+          <div class="inst-item ${s.status === 'pagado' ? 'paid-row' : ''}" style="padding:8px 10px;">
+            <div style="line-height:1.35;">
+              <strong>C${s.num}/${totalQuotas}</strong> • $${Number(s.amount).toFixed(2)} (Bs. ${bVal})<br>
+              <span style="font-size:11px;color:var(--muted);">Vence: ${new Date(s.dueDate).toLocaleDateString()}</span>
+              ${extraLine}
+            </div>
+            <div>${badge}</div>
+          </div>`;
+      }).join("");
+
+      if (openLoan.status === "pendiente") {
+        actBox.innerHTML = `
+          <h3 class="card-title">
+            <span>Solicitud en Revisión</span>
+            <span class="pill pill-pend">PENDIENTE</span>
+          </h3>
+          <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">
+            Pediste <strong>$${openLoan.amount.toFixed(2)} USD</strong> en <strong>${totalQuotas} ${totalQuotas === 1 ? 'cuota' : 'cuotas'}</strong>. En breve te transferimos a: <strong>${openLoan.payInfo}</strong>
+          </p>
+          <div class="summary-strip">
+            <div>Total Plan<strong>$${Number(openLoan.totalDue).toFixed(2)}</strong></div>
+            <div>Pagado<strong style="color:var(--primary);">$0.00</strong></div>
+            <div>Falta<strong style="color:#0747A6;">$${Number(openLoan.totalDue).toFixed(2)}</strong></div>
+          </div>
+          <div>${scheduleHtml}</div>
+        `;
+      } else {
+        const nextInst = schedule.find(s => s.status === "pendiente" || s.status === "revision");
+        const isLate = nextInst && nextInst.status === "pendiente" && Date.now() > nextInst.dueDate;
 
         let payFormHtml = "";
         if (nextInst && nextInst.status === "revision") {
@@ -987,8 +1078,8 @@
           </h3>
           <div class="summary-strip">
             <div>Total Plan<strong>$${Number(openLoan.totalDue).toFixed(2)}</strong></div>
-            <div>Pagado<strong style="color:var(--primary);">$${paidTotalUsd.toFixed(2)}</strong></div>
-            <div>Restante<strong style="color:#0747A6;">$${remTotalUsd.toFixed(2)}</strong></div>
+            <div>Cobrado<strong style="color:var(--primary);">$${paidTotalUsd.toFixed(2)}</strong></div>
+            <div>Falta<strong style="color:#0747A6;">$${remTotalUsd.toFixed(2)}</strong></div>
           </div>
           <div style="margin-bottom:8px;">${scheduleHtml}</div>
           ${payFormHtml}
@@ -1000,21 +1091,24 @@
         reqBox.classList.remove("hidden");
         reqBox.innerHTML = `<div class="alert alert-warn" style="margin:0;">Alcanzaste el límite de <strong>${state.cfg.maxDaily} solicitudes</strong> por hoy. Vuelve mañana para pedir otro cupo.</div>`;
       } else {
-        const recUsd = rule.amount;
-        const intUsd = recUsd * (rule.pct / 100);
-        const totUsd = recUsd + intUsd;
-        const qUsd = totUsd / rule.quotas;
-        const freqLabel = rule.freq === "quincenal" ? "Quincenales (cada 15 días)" : "Semanales (cada 7 días)";
-
         reqBox.classList.remove("hidden");
-        document.getElementById("reqLvlName").textContent = `Nivel ${rule.lvl} • ${rule.name}`;
-        document.getElementById("reqRecUsd").textContent = `$${recUsd.toFixed(2)} (Bs. ${(recUsd * rate).toFixed(2)})`;
-        document.getElementById("reqPct").textContent = rule.pct;
-        document.getElementById("reqIntUsd").textContent = `$${intUsd.toFixed(2)}`;
-        document.getElementById("reqTotUsd").textContent = `$${totUsd.toFixed(2)} (Bs. ${(totUsd * rate).toFixed(2)})`;
-        document.getElementById("reqPlanText").textContent = `${rule.quotas} cuotas ${freqLabel}`;
-        document.getElementById("reqQuotaVal").textContent = `$${qUsd.toFixed(2)} (Bs. ${(qUsd * rate).toFixed(2)})`;
-        document.getElementById("reqDest").textContent = u.payInfo;
+        document.getElementById("reqMaxQuotasLabel").textContent = rule.quotas;
+
+        const sel = document.getElementById("reqQuotaSelect");
+        const prevChoice = state.selectedQuotasByUser[u.cedula] || rule.quotas;
+        const validChoice = Math.min(rule.quotas, Math.max(1, prevChoice));
+        const freqWord = rule.freq === "quincenal" ? "quincenales (cada 15 días)" : "semanales (cada 7 días)";
+        const stepDays = rule.freq === "quincenal" ? 15 : 7;
+
+        let optsHtml = "";
+        for (let q = 1; q <= rule.quotas; q++) {
+          const label = q === 1
+            ? `1 cuota única (a los ${stepDays} días)`
+            : `${q} cuotas ${freqWord}`;
+          optsHtml += `<option value="${q}" ${q === validChoice ? 'selected' : ''}>${label}</option>`;
+        }
+        sel.innerHTML = optsHtml;
+        updateClientLoanPreview();
       }
     }
 
@@ -1030,7 +1124,7 @@
     wrap.innerHTML = myLoans.slice(0, 8).map(l => `
       <div class="row" style="padding:8px 0;border-bottom:1px solid var(--border);">
         <div>
-          <strong>$${l.amount.toFixed(2)} → $${l.totalDue.toFixed(2)}</strong> (${l.quotas || 1} cuotas)
+          <strong>$${l.amount.toFixed(2)} → $${l.totalDue.toFixed(2)}</strong> (${l.quotas || 1} ${(l.quotas || 1) === 1 ? 'cuota' : 'cuotas'})
           <div style="font-size:11px;color:var(--muted);">${new Date(l.createdAt).toLocaleDateString()}</div>
         </div>
         <span class="pill ${l.status === 'pagado' ? 'pill-pag' : l.status === 'activo' ? 'pill-act' : 'pill-pend'}">${l.status.toUpperCase()}</span>
@@ -1041,21 +1135,23 @@
   window.requestLoan = async () => {
     const u = state.users[state.currentUserCedula];
     const rule = getLevelRule(u.level);
+    const sel = document.getElementById("reqQuotaSelect");
+    const chosenQuotas = Math.min(rule.quotas, Math.max(1, parseInt(sel ? sel.value : rule.quotas) || rule.quotas));
+
     const amount = rule.amount;
     const totalDue = Number((amount + (amount * (rule.pct / 100))).toFixed(2));
-    const quotas = rule.quotas;
     const freq = rule.freq;
     const stepDays = freq === "quincenal" ? 15 : 7;
-    const quotaAmount = Number((totalDue / quotas).toFixed(2));
+    const quotaAmount = Number((totalDue / chosenQuotas).toFixed(2));
     const id = "L" + Date.now();
 
     await setDoc(doc(db, "loans", id), {
       id, cedula: u.cedula, nombre: u.nombre, phone: u.phone, payInfo: u.payInfo,
       level: rule.lvl, levelName: rule.name,
-      amount, totalDue, quotas, freq, stepDays, quotaAmount, pct: rule.pct,
+      amount, totalDue, quotas: chosenQuotas, freq, stepDays, quotaAmount, pct: rule.pct,
       status: "pendiente", createdAt: Date.now(), schedule: []
     });
-    showToast("¡Solicitud enviada! Te avisamos al transferir.");
+    showToast(`¡Solicitud de ${chosenQuotas} ${chosenQuotas === 1 ? 'cuota' : 'cuotas'} enviada!`);
   };
 
   window.submitInstallmentPayment = async (loanId, instNum) => {
@@ -1132,6 +1228,8 @@
         const rate = Number(state.cfg.rate) || 1;
         const sch = l.status === "pendiente" ? [] : getNormalizedSchedule(l);
         const totalQuotas = sch.length || Number(l.quotas) || 1;
+        const stepDays = getLoanStepDays(l);
+        const freqTxt = stepDays === 15 ? "quincenal (15d)" : "semanal (7d)";
         const revInst = sch.find(s => s.status === "revision");
         const nextPend = sch.find(s => s.status === "pendiente");
         const paidCnt = sch.filter(s => s.status === "pagado").length;
@@ -1144,7 +1242,7 @@
         let actions = "";
         if (l.status === "pendiente") {
           actions = `
-            <button class="btn btn-sm btn-primary" onclick="askApproveLoan('${l.id}')">Aprobar (${l.quotas || 2} cuotas)</button>
+            <button class="btn btn-sm btn-primary" onclick="askApproveLoan('${l.id}')">Aprobar (${totalQuotas} ${totalQuotas === 1 ? 'cuota' : 'cuotas'})</button>
             <button class="btn btn-sm btn-warn" onclick="askRejectLoan('${l.id}')">Rechazar</button>
           `;
         } else if (revInst) {
@@ -1219,7 +1317,7 @@
             <div style="font-size:12px;margin:6px 0;line-height:1.5;">
               Nivel: <strong>${lvlTag}</strong> • Tel: <a href="https://wa.me/58${l.phone.replace(/^0/,'')}" target="_blank" style="color:var(--primary);font-weight:700;">${l.phone}</a><br>
               Prestar: <strong>$${l.amount.toFixed(2)} (Bs. ${(l.amount * rate).toFixed(2)})</strong> • Total: <strong>$${l.totalDue.toFixed(2)}</strong><br>
-              Plan: <strong>${totalQuotas} cuotas ${l.freq || 'semanal'}es</strong> de <strong>$${(l.quotaAmount || l.totalDue).toFixed(2)}</strong> (${paidCnt}/${totalQuotas} pagadas)<br>
+              Plan: <strong>${totalQuotas} ${totalQuotas === 1 ? 'cuota' : 'cuotas'} ${freqTxt}</strong> de <strong>$${(l.quotaAmount || l.totalDue).toFixed(2)}</strong> (${paidCnt}/${totalQuotas} pagadas)<br>
               Cuenta: <strong>${l.payInfo}</strong>
               ${revInst ? `<br>Pago reportado Cuota ${revInst.num} • Ref: <strong>${revInst.payRef}</strong>` : ""}
             </div>
@@ -1268,11 +1366,13 @@
   window.askApproveLoan = (id) => {
     const l = state.loans[id];
     if (!l) return;
+    const q = Number(l.quotas) || 2;
+    const stepDays = getLoanStepDays(l);
     requestSecureAction(
       "approveLoan",
       { id },
       "Aprobar Préstamo",
-      `Vas a aprobar y activar un préstamo de <strong>$${Number(l.amount).toFixed(2)} USD</strong> para <strong>${l.nombre}</strong> (V-${l.cedula}) en <strong>${l.quotas || 2} cuotas</strong>.`,
+      `Vas a aprobar y activar un préstamo de <strong>$${Number(l.amount).toFixed(2)} USD</strong> para <strong>${l.nombre}</strong> (V-${l.cedula}) en <strong>${q} ${q === 1 ? 'cuota' : 'cuotas'}</strong> (cada <strong>${stepDays} días</strong>).`,
       false
     );
   };
@@ -1323,12 +1423,13 @@
     );
   };
 
-  // EJECUTORES REALES TRAS VALIDAR EL PIN
+  // EJECUTORES REALES TRAS VALIDAR EL PIN (15 DÍAS QUINCENAL / 7 DÍAS SEMANAL)
   async function runApproveLoan(id) {
     const l = state.loans[id];
     if (!l) return;
     const quotas = Number(l.quotas) || 2;
-    const stepDays = l.freq === "quincenal" ? 15 : 7;
+    const stepDays = getLoanStepDays(l);
+    const freq = stepDays === 15 ? "quincenal" : "semanal";
     const qAmt = Number((Number(l.totalDue) / quotas).toFixed(2));
     const now = Date.now();
     const schedule = [];
@@ -1341,8 +1442,8 @@
       });
     }
     state.expandedLoans[id] = true;
-    await setDoc(doc(db, "loans", id), { ...l, quotas, status: "activo", approvedAt: now, schedule });
-    showToast(`✅ Préstamo activado en ${quotas} cuotas`);
+    await setDoc(doc(db, "loans", id), { ...l, quotas, freq, stepDays, status: "activo", approvedAt: now, schedule });
+    showToast(`✅ Préstamo activado en ${quotas} ${quotas === 1 ? 'cuota' : 'cuotas'} (cada ${stepDays} días)`);
   }
 
   async function runRejectLoan(id) {
@@ -1451,15 +1552,15 @@
             <button class="btn btn-sm btn-danger" style="padding:5px 8px;" onclick="this.closest('.lvl-card-cfg').remove()">X</button>
           </div>
           <div style="font-size:10px;color:var(--muted);display:grid;grid-template-columns:1fr 1fr 1fr 1.2fr;gap:5px;text-align:center;">
-            <span>Cupo $</span><span>Interés %</span><span>Cuotas</span><span>Frecuencia</span>
+            <span>Cupo $</span><span>Interés %</span><span>Máx. Cuotas</span><span>Frecuencia</span>
           </div>
           <div class="lvl-grid-4">
             <input type="number" step="0.5" class="lv-amt" value="${lv.amount}">
             <input type="number" class="lv-pct" value="${lv.pct}">
             <input type="number" class="lv-quo" value="${lv.quotas || 2}">
             <select class="lv-freq">
-              <option value="semanal" ${(lv.freq || 'semanal') === 'semanal' ? 'selected' : ''}>Semanal</option>
-              <option value="quincenal" ${lv.freq === 'quincenal' ? 'selected' : ''}>Quincenal</option>
+              <option value="semanal" ${(lv.freq || 'semanal') === 'semanal' ? 'selected' : ''}>Semanal (7d)</option>
+              <option value="quincenal" ${lv.freq === 'quincenal' ? 'selected' : ''}>Quincenal (15d)</option>
             </select>
           </div>
         </div>
@@ -1479,15 +1580,15 @@
         <button class="btn btn-sm btn-danger" style="padding:5px 8px;" onclick="this.closest('.lvl-card-cfg').remove()">X</button>
       </div>
       <div style="font-size:10px;color:var(--muted);display:grid;grid-template-columns:1fr 1fr 1fr 1.2fr;gap:5px;text-align:center;">
-        <span>Cupo $</span><span>Interés %</span><span>Cuotas</span><span>Frecuencia</span>
+        <span>Cupo $</span><span>Interés %</span><span>Máx. Cuotas</span><span>Frecuencia</span>
       </div>
       <div class="lvl-grid-4">
         <input type="number" step="0.5" class="lv-amt" value="50">
         <input type="number" class="lv-pct" value="20">
         <input type="number" class="lv-quo" value="4">
         <select class="lv-freq">
-          <option value="semanal">Semanal</option>
-          <option value="quincenal" selected>Quincenal</option>
+          <option value="semanal">Semanal (7d)</option>
+          <option value="quincenal" selected>Quincenal (15d)</option>
         </select>
       </div>
     `;
