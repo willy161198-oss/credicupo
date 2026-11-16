@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CrediCupo Express</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --primary: #00875A;
+    --primary-dark: #006644;
+    --accent: #00B8D9;
+    --bg: #F4F5F7;
+    --card: #FFFFFF;
+    --text: #172B4D;
+    --muted: #6B778C;
+    --danger: #DE350B;
+    --warn: #FF991F;
+    --border: #DFE1E6;
+  }
+  * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--bg); color: var(--text); padding-bottom: 40px; }
+  .header {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #fff; padding: 16px 18px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+  .logo-badge {
+    width: 36px; height: 36px; border-radius: 10px; background: rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px;
+  }
+  .brand h1 { margin: 0; font-size: 17px; font-weight: 700; }
+  .brand small { display: block; font-size: 11px; opacity: 0.85; }
+  .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #57D9A3; display: inline-block; margin-right: 4px; }
+  .container { max-width: 480px; margin: 0 auto; padding: 14px; }
+  .card {
+    background: var(--card); border-radius: 14px; padding: 16px; margin-bottom: 14px;
+    box-shadow: 0 1px 4px rgba(9,30,66,0.08); border: 1px solid var(--border);
+  }
+  .card-title { margin: 0 0 12px; font-size: 15px; font-weight: 700; color: var(--text); display: flex; justify-content: space-between; align-items: center; }
+  .hero-box {
+    background: linear-gradient(135deg, #091E42, #172B4D); color: #fff; border-radius: 16px; padding: 18px; margin-bottom: 14px;
+  }
+  .hero-top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .badge-lvl { background: var(--primary); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+  .rate-box { text-align: right; font-size: 12px; opacity: 0.9; }
+  .rate-box strong { display: block; font-size: 15px; color: #57D9A3; }
+  .cupo-amount { font-size: 36px; font-weight: 800; margin: 10px 0 2px; }
+  .cupo-bs { font-size: 14px; color: #B3BAC5; margin-bottom: 12px; }
+  .progress-wrap { background: rgba(255,255,255,0.15); height: 8px; border-radius: 10px; overflow: hidden; margin: 6px 0; }
+  .progress-bar { background: #57D9A3; height: 100%; transition: width 0.3s; }
+  label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin: 10px 0 4px; }
+  input, select, textarea {
+    width: 100%; padding: 11px 12px; border: 1.5px solid var(--border); border-radius: 10px;
+    font-size: 15px; background: #FAFBFC; color: var(--text); outline: none;
+  }
+  input:focus, select:focus { border-color: var(--primary); background: #fff; }
+  .btn {
+    width: 100%; padding: 13px; border: none; border-radius: 11px; font-size: 15px; font-weight: 700;
+    cursor: pointer; margin-top: 12px; transition: 0.15s; text-align: center; display: inline-block; text-decoration: none;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:active { background: var(--primary-dark); transform: scale(0.99); }
+  .btn-secondary { background: #EBECF0; color: var(--text); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-warn { background: var(--warn); color: #172B4D; }
+  .btn-sm { padding: 7px 11px; font-size: 12px; width: auto; margin-top: 0; border-radius: 8px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; background: #EBECF0; padding: 4px; border-radius: 12px; }
+  .tab { flex: 1; padding: 9px 6px; border: none; background: transparent; border-radius: 9px; font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer; }
+  .tab.active { background: #fff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .pill { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+  .pill-pend { background: #FFFAE6; color: #974F0C; }
+  .pill-act { background: #DEEBFF; color: #0747A6; }
+  .pill-pag { background: #E3FCEF; color: #006644; }
+  .pill-mor { background: #FFEBE6; color: #BF2600; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .stat-card { background: #FAFBFC; border: 1px solid var(--border); border-radius: 10px; padding: 10px; text-align: center; }
+  .stat-card small { font-size: 11px; color: var(--muted); display: block; }
+  .stat-card strong { font-size: 16px; color: var(--text); }
+  .alert { padding: 12px; border-radius: 10px; font-size: 13px; margin-bottom: 12px; line-height: 1.4; }
+  .alert-info { background: #DEEBFF; color: #0747A6; }
+  .alert-warn { background: #FFFAE6; color: #974F0C; border: 1px solid #FFE380; }
+  .alert-danger { background: #FFEBE6; color: #BF2600; border: 1px solid #FFBDAD; }
+  .alert-ok { background: #E3FCEF; color: #006644; }
+  .hidden { display: none !important; }
+  .item-box { border: 1px solid var(--border); border-radius: 11px; padding: 12px; margin-bottom: 10px; background: #FAFBFC; }
+  .lvl-row { display: grid; grid-template-columns: 38px 1fr 1fr 1fr 1.2fr 30px; gap: 4px; align-items: center; margin-bottom: 8px; }
+  .lvl-row input, .lvl-row select { padding: 8px 4px; font-size: 12px; text-align: center; }
+  .inst-item {
+    display: flex; justify-content: space-between; align-items: center; padding: 9px 10px;
+    border-radius: 9px; border: 1px solid var(--border); margin-bottom: 6px; background: #fff; font-size: 12px;
+  }
+  .inst-item.next-due { border-color: var(--primary); background: #F0FFF8; }
+  .toast {
+    position: fixed; top: 72px; left: 50%; transform: translateX(-50%); background: #172B4D; color: #fff;
+    padding: 10px 18px; border-radius: 25px; font-size: 13px; font-weight: 600; z-index: 9999;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2); transition: opacity 0.25s;
+  }
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(9,30,66,0.65); z-index: 500;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .modal { background: #fff; border-radius: 16px; padding: 18px; width: 100%; max-width: 400px; max-height: 90vh; overflow-y: auto; }
+  .preview-img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 10px; margin-top: 8px; border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="brand" id="brandTap">
+    <div class="logo-badge">C$</div>
+    <div>
+      <h1 id="hdrAppName">CrediCupo Express</h1>
+      <small><span class="sync-dot" id="syncDot"></span><span id="syncText">Conectando nube...</span></small>
+    </div>
+  </div>
+  <button id="btnLogout" class="btn btn-sm hidden" style="background:rgba(255,255,255,0.2);color:#fff;" onclick="logoutClient()">Salir</button>
+  <button id="btnExitAdmin" class="btn btn-sm hidden" style="background:#DE350B;color:#fff;" onclick="closeAdmin()">Cerrar Panel</button>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<!-- PANTALLA CARGA -->
+<div id="viewLoading" class="container" style="text-align:center;padding-top:60px;">
+  <div class="card">
+    <div style="font-size:34px;margin-bottom:8px;">⏳</div>
+    <strong>Sincronizando con CrediCupo...</strong>
+    <p style="font-size:13px;color:var(--muted);">Cargando tasa BCV y cuotas en tiempo real</p>
+  </div>
+</div>
+
+<!-- VISTA 1: ACCESO / REGISTRO CLIENTE -->
+<div id="viewAuth" class="container hidden">
+  <div class="card">
+    <div class="tabs">
+      <button class="tab active" id="tabLogin" onclick="switchAuth('login')">Ya tengo cuenta</button>
+      <button class="tab" id="tabReg" onclick="switchAuth('reg')">Registrarme</button>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="formLogin">
+      <h3 class="card-title">Ingresa a tu cuenta</h3>
+      <label>Número de Cédula (solo números)</label>
+      <input type="tel" id="logCedula" placeholder="Ej: 26417372">
+      <label>Tu PIN de 4 dígitos</label>
+      <input type="password" id="logPin" maxlength="4" inputmode="numeric" placeholder="****">
+      <button class="btn btn-primary" onclick="loginClient()">Entrar a mi Cupo</button>
+    </div>
+
+    <!-- REGISTRO -->
+    <div id="formReg" class="hidden">
+      <h3 class="card-title">Crea tu cuenta en 1 minuto</h3>
+      <div id="regClosedAlert" class="alert alert-warn hidden"></div>
+      <div id="regFields">
+        <label>Nombre y Apellido completo</label>
+        <input type="text" id="regNombre" placeholder="Ej: Juan Pérez">
+        <div class="grid-2">
+          <div>
+            <label>Cédula</label>
+            <input type="tel" id="regCedula" placeholder="26417372">
+          </div>
+          <div>
+            <label>WhatsApp</label>
+            <input type="tel" id="regPhone" placeholder="04121234567">
+          </div>
+        </div>
+        <label>Crea un PIN secreto (4 números para entrar)</label>
+        <input type="tel" id="regPin" maxlength="4" placeholder="Ej: 1234">
+
+        <label>Método donde recibirás tus préstamos</label>
+        <select id="regMethod" onchange="toggleRegMethod()">
+          <option value="pm">Pago Móvil (Bolívares a tasa BCV)</option>
+          <option value="binance">Binance Pay (USDT)</option>
+        </select>
+
+        <div id="regPmBox">
+          <label>Banco</label>
+          <select id="regBank">
+            <option value="BDV (0102)">Banco de Venezuela (0102)</option>
+            <option value="Banesco (0134)">Banesco (0134)</option>
+            <option value="Mercantil (0105)">Mercantil (0105)</option>
+            <option value="Provincial (0108)">Provincial (0108)</option>
+            <option value="BNC (0191)">BNC (0191)</option>
+            <option value="Bancamiga (0172)">Bancamiga (0172)</option>
+            <option value="Banplus (0174)">Banplus (0174)</option>
+            <option value="Bicentenario (0175)">Bicentenario (0175)</option>
+          </select>
+          <div class="grid-2">
+            <div>
+              <label>Teléfono Pago Móvil</label>
+              <input type="tel" id="regPmPhone" placeholder="04121234567">
+            </div>
+            <div>
+              <label>Cédula del titular</label>
+              <input type="tel" id="regPmCedula" placeholder="26417372">
+            </div>
+          </div>
+        </div>
+
+        <div id="regBinBox" class="hidden">
+          <label>Correo o Binance Pay ID</label>
+          <input type="text" id="regBinId" placeholder="tucorreo@gmail.com o ID">
+        </div>
+
+        <label>Foto de tu Cédula de Identidad (obligatoria)</label>
+        <input type="file" id="regIdPhoto" accept="image/*" onchange="handlePhoto(this, 'regIdPreview')">
+        <img id="regIdPreview" class="preview-img hidden">
+
+        <button class="btn btn-primary" onclick="registerClient()">Crear Cuenta y Ver Cupo</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VISTA 2: PANEL CLIENTE -->
+<div id="viewClient" class="container hidden">
+  <div class="hero-box">
+    <div class="hero-top">
+      <div>
+        <div style="font-size:13px;opacity:0.85;">Hola, <strong id="cliName">Cliente</strong></div>
+        <div style="margin-top:4px;"><span class="badge-lvl" id="cliLvlBadge">Nivel 1</span></div>
+      </div>
+      <div class="rate-box">
+        Tasa BCV hoy
+        <strong id="cliRateDisplay">Bs. 0.00</strong>
+      </div>
+    </div>
+    <div class="cupo-amount" id="cliCupoUsd">$1.00</div>
+    <div class="cupo-bs" id="cliCupoBs">= Bs. 0.00</div>
+
+    <div class="row" style="font-size:12px;">
+      <span>Progreso para subir de nivel</span>
+      <strong id="cliProgText">0 / 5 préstamos</strong>
+    </div>
+    <div class="progress-wrap"><div class="progress-bar" id="cliProgBar" style="width:0%"></div></div>
+    <div class="row" style="font-size:11px;opacity:0.8;margin-top:6px;">
+      <span id="cliDailyText">Solicitudes hoy: 0/3</span>
+      <span id="cliNextLvlText">Meta: Nivel 2</span>
+    </div>
+  </div>
+
+  <!-- BLOQUEADO / MORA -->
+  <div id="cliBlockedBox" class="alert alert-danger hidden"></div>
+
+  <!-- ESTADO DE SOLICITUD / PRÉSTAMO ACTIVO POR CUOTAS -->
+  <div id="cliActiveLoanBox" class="card hidden"></div>
+
+  <!-- BOTÓN PEDIR NUEVO PRÉSTAMO -->
+  <div id="cliRequestBox" class="card hidden">
+    <h3 class="card-title">Solicitar Micropréstamo en Cuotas</h3>
+    <div style="background:#FAFBFC;padding:12px;border-radius:10px;border:1px solid var(--border);font-size:13px;line-height:1.6;">
+      <div class="row"><span>Monto a recibir:</span><strong id="reqRecUsd">$1.00 (Bs. 0.00)</strong></div>
+      <div class="row"><span>Interés (<span id="reqPct">25</span>%):</span><strong id="reqIntUsd">$0.25</strong></div>
+      <div class="row" style="border-top:1px dashed var(--border);margin-top:6px;padding-top:6px;font-size:14px;">
+        <span>Total a devolver:</span><strong style="color:var(--primary);" id="reqTotUsd">$1.25 (Bs. 0.00)</strong>
+      </div>
+      <div class="row"><span>Plan de pago:</span><strong id="reqPlanText">2 cuotas Semanales</strong></div>
+      <div class="row"><span>Valor de cada cuota:</span><strong style="color:#0747A6;" id="reqQuotaVal">$0.63 (Bs. 0.00)</strong></div>
+      <div class="row"><span>Destino:</span><strong id="reqDest">Pago Móvil</strong></div>
+    </div>
+    <button class="btn btn-primary" onclick="requestLoan()">Confirmar y Pedir Préstamo</button>
+  </div>
+
+  <!-- HISTORIAL CLIENTE -->
+  <div class="card">
+    <h3 class="card-title">Tus Préstamos Anteriores</h3>
+    <div id="cliHistoryList" style="font-size:13px;color:var(--muted);">Aún no tienes préstamos registrados.</div>
+  </div>
+</div>
+
+<!-- VISTA 3: PANEL DUEÑO (ADMIN) -->
+<div id="viewAdmin" class="container hidden">
+  <div class="grid-3" style="margin-bottom:12px;">
+    <div class="stat-card"><small>Capital Disp.</small><strong id="admCapDisp" style="color:var(--primary);">$0.00</strong></div>
+    <div class="stat-card"><small>En la Calle</small><strong id="admEnCalle" style="color:#0747A6;">$0.00</strong></div>
+    <div class="stat-card"><small>Ganancia</small><strong id="admGanancia" style="color:#006644;">$0.00</strong></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" id="admTabLoans" onclick="switchAdminTab('loans')">Préstamos (<span id="cntLoans">0</span>)</button>
+    <button class="tab" id="admTabUsers" onclick="switchAdminTab('users')">Clientes (<span id="cntUsers">0</span>)</button>
+    <button class="tab" id="admTabCfg" onclick="switchAdminTab('cfg')">Editar Reglas</button>
+  </div>
+
+  <!-- TAB PRÉSTAMOS -->
+  <div id="admPaneLoans">
+    <div id="admLoansList"></div>
+  </div>
+
+  <!-- TAB CLIENTES -->
+  <div id="admPaneUsers" class="hidden">
+    <input type="text" id="admSearchUser" placeholder="Buscar por nombre o cédula..." oninput="renderAdminUsers()" style="margin-bottom:10px;">
+    <div id="admUsersList"></div>
+  </div>
+
+  <!-- TAB CONFIGURACIÓN -->
+  <div id="admPaneCfg" class="hidden">
+    <div class="card">
+      <h3 class="card-title">Ajustes Generales y Tasa BCV</h3>
+      <div class="grid-2">
+        <div>
+          <label>Nombre de la App</label>
+          <input type="text" id="cfgAppName">
+        </div>
+        <div>
+          <label>Código Secreto Dueño</label>
+          <input type="tel" id="cfgPin">
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div>
+          <label>Modo Tasa BCV</label>
+          <select id="cfgAutoRate" onchange="toggleRateInput()">
+            <option value="true">Automática (API BCV)</option>
+            <option value="false">Manual (Yo la escribo)</option>
+          </select>
+        </div>
+        <div>
+          <label>Tasa BCV Actual (Bs)</label>
+          <input type="text" id="cfgRate" placeholder="52.50">
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div>
+          <label>Capital Total ($)</label>
+          <input type="number" step="0.01" id="cfgCapital">
+        </div>
+        <div>
+          <label>Cupos Máx. Clientes</label>
+          <input type="number" id="cfgMaxUsers">
+        </div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <label>Préstamos p/ subir nivel</label>
+          <input type="number" id="cfgPaysPerLvl">
+        </div>
+        <div>
+          <label>Máx. solicitudes/día</label>
+          <input type="number" id="cfgMaxDaily">
+        </div>
+      </div>
+      <label>Tu WhatsApp de Atención (con 58)</label>
+      <input type="tel" id="cfgWa" placeholder="584121234567">
+      <label>Tus Datos de Pago Móvil (donde te pagan)</label>
+      <input type="text" id="cfgOwnerPm">
+      <label>Tu Binance Pay ID / Correo</label>
+      <input type="text" id="cfgOwnerBin">
+      <label>Aviso cuando no haya cupos</label>
+      <input type="text" id="cfgClosedMsg">
+
+      <h3 class="card-title" style="margin-top:18px;">
+        Niveles y Cuotas
+        <button class="btn btn-sm btn-primary" onclick="addLevelRow()">+ Agregar Nivel</button>
+      </h3>
+      <div style="font-size:10px;color:var(--muted);display:grid;grid-template-columns:38px 1fr 1fr 1fr 1.2fr 30px;gap:4px;text-align:center;margin-bottom:4px;">
+        <span>Nivel</span><span>Cupo $</span><span>Int %</span><span>Cuotas</span><span>Frecuencia</span><span></span>
+      </div>
+      <div id="cfgLevelsWrap"></div>
+
+      <button class="btn btn-primary" onclick="saveAdminConfig()">Guardar Todos los Cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VER FOTO -->
+<div id="photoModal" class="modal-bg hidden" onclick="this.classList.add('hidden')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 class="card-title" id="photoModalTitle">Comprobante / Cédula</h3>
+    <img id="photoModalImg" style="width:100%;border-radius:10px;">
+    <button class="btn btn-secondary" onclick="document.getElementById('photoModal').classList.add('hidden')">Cerrar</button>
+  </div>
+</div>
+
+<!-- MODAL ACCESO ADMIN -->
+<div id="adminLoginModal" class="modal-bg hidden" onclick="this.classList.add('hidden')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 class="card-title">Acceso Dueño</h3>
+    <label>Ingresa tu Código Maestro</label>
+    <input type="password" id="adminPinInput" inputmode="numeric" placeholder="****">
+    <button class="btn btn-primary" onclick="verifyAdminPin()">Entrar al Panel</button>
+    <button class="btn btn-secondary" onclick="document.getElementById('adminLoginModal').classList.add('hidden')">Cancelar</button>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyD-014xZkByqWrP0vyPRx5pLsVJMWFURfg",
+    authDomain: "credicupo-cdb63.firebaseapp.com",
+    projectId: "credicupo-cdb63",
+    storageBucket: "credicupo-cdb63.firebasestorage.app",
+    messagingSenderId: "1073425236940",
+    appId: "1:1073425236940:web:823cb3967c87a076af9369",
+    measurementId: "G-VWX0BCWEJD"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  if (window.Telegram && window.Telegram.WebApp) {
+    window.Telegram.WebApp.ready();
+    window.Telegram.WebApp.expand();
+  }
+
+  const DEFAULT_CFG = {
+    appName: "CrediCupo Express",
+    adminPin: "7788",
+    capital: 50,
+    maxUsers: 50,
+    autoRate: true,
+    rate: 52.50,
+    paysPerLvl: 5,
+    maxDaily: 3,
+    wa: "584140000000",
+    ownerPm: "BDV (0102) • V-12345678 • 0414-0000000",
+    ownerBin: "pagos@credicupo.com",
+    closedMsg: "Cupos agotados por ahora. Pronto abriremos nuevos lugares.",
+    levels: [
+      { lvl: 1, amount: 1, pct: 25, quotas: 2, freq: "semanal" },
+      { lvl: 2, amount: 3, pct: 25, quotas: 2, freq: "semanal" },
+      { lvl: 3, amount: 5, pct: 24, quotas: 3, freq: "semanal" },
+      { lvl: 4, amount: 10, pct: 23, quotas: 2, freq: "quincenal" },
+      { lvl: 5, amount: 25, pct: 22, quotas: 3, freq: "quincenal" },
+      { lvl: 6, amount: 30, pct: 21, quotas: 4, freq: "quincenal" }
+    ]
+  };
+
+  let state = {
+    cfg: { ...DEFAULT_CFG },
+    users: {},
+    loans: {},
+    currentUserCedula: localStorage.getItem("cc_session_cedula") || null,
+    isAdmin: false,
+    loadedCfg: false,
+    autoFetchedOnce: false
+  };
+
+  let tempPhotos = {};
+
+  function showToast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.classList.remove("hidden");
+    clearTimeout(window._toastT);
+    window._toastT = setTimeout(() => t.classList.add("hidden"), 2800);
+  }
+
+  function setOnlineStatus(ok) {
+    document.getElementById("syncDot").style.background = ok ? "#57D9A3" : "#FF5630";
+    document.getElementById("syncText").textContent = ok ? "En vivo • Sincronizado" : "Sin conexión a nube";
+  }
+
+  // CONSULTAR TASA BCV AUTOMÁTICA
+  async function syncBcvAutoRate() {
+    if (!state.cfg.autoRate || state.autoFetchedOnce) return;
+    state.autoFetchedOnce = true;
+    try {
+      const res = await fetch("https://ve.dolarapi.com/v1/dolares/oficial");
+      const data = await res.json();
+      const bcv = parseFloat(data.promedio || data.venta || data.compra);
+      if (bcv && bcv > 1 && Math.abs(bcv - Number(state.cfg.rate)) > 0.005) {
+        state.cfg.rate = Number(bcv.toFixed(2));
+        await setDoc(doc(db, "credicupo", "config"), state.cfg);
+      }
+    } catch (e) {
+      console.warn("No se pudo leer API BCV externa, usando tasa guardada:", e);
+    }
+  }
+
+  // ESCUCHA EN TIEMPO REAL DE FIRESTORE
+  onSnapshot(doc(db, "credicupo", "config"), async (snap) => {
+    if (snap.exists()) {
+      state.cfg = { ...DEFAULT_CFG, ...snap.data() };
+    } else {
+      await setDoc(doc(db, "credicupo", "config"), DEFAULT_CFG);
+    }
+    state.loadedCfg = true;
+    setOnlineStatus(true);
+    syncBcvAutoRate();
+    refreshUI();
+  }, (err) => {
+    console.error(err);
+    setOnlineStatus(false);
+  });
+
+  onSnapshot(collection(db, "users"), (snap) => {
+    const map = {};
+    snap.forEach(d => { map[d.id] = d.data(); });
+    state.users = map;
+    refreshUI();
+  });
+
+  onSnapshot(collection(db, "loans"), (snap) => {
+    const map = {};
+    snap.forEach(d => { map[d.id] = d.data(); });
+    state.loans = map;
+    refreshUI();
+  });
+
+  function refreshUI() {
+    if (!state.loadedCfg) return;
+    document.getElementById("viewLoading").classList.add("hidden");
+    document.getElementById("hdrAppName").textContent = state.cfg.appName;
+
+    if (state.isAdmin) {
+      document.getElementById("viewAuth").classList.add("hidden");
+      document.getElementById("viewClient").classList.add("hidden");
+      document.getElementById("viewAdmin").classList.remove("hidden");
+      document.getElementById("btnLogout").classList.add("hidden");
+      document.getElementById("btnExitAdmin").classList.remove("hidden");
+      renderAdminAll();
+      return;
+    }
+
+    document.getElementById("btnExitAdmin").classList.add("hidden");
+    document.getElementById("viewAdmin").classList.add("hidden");
+
+    if (state.currentUserCedula && state.users[state.currentUserCedula]) {
+      document.getElementById("viewAuth").classList.add("hidden");
+      document.getElementById("viewClient").classList.remove("hidden");
+      document.getElementById("btnLogout").classList.remove("hidden");
+      renderClientView();
+    } else {
+      document.getElementById("viewClient").classList.add("hidden");
+      document.getElementById("btnLogout").classList.add("hidden");
+      document.getElementById("viewAuth").classList.remove("hidden");
+      checkCuposOpen();
+    }
+  }
+
+  // 5 TOQUES PARA PANEL DUEÑO
+  let tapCount = 0, tapTimer = null;
+  document.getElementById("brandTap").addEventListener("click", () => {
+    tapCount++;
+    clearTimeout(tapTimer);
+    tapTimer = setTimeout(() => { tapCount = 0; }, 1500);
+    if (tapCount >= 5) {
+      tapCount = 0;
+      document.getElementById("adminPinInput").value = "";
+      document.getElementById("adminLoginModal").classList.remove("hidden");
+    }
+  });
+
+  window.verifyAdminPin = () => {
+    const pin = document.getElementById("adminPinInput").value.trim();
+    if (pin === String(state.cfg.adminPin)) {
+      document.getElementById("adminLoginModal").classList.add("hidden");
+      state.isAdmin = true;
+      loadAdminCfgForm();
+      refreshUI();
+      showToast("Bienvenido al Panel de Dueño");
+    } else {
+      showToast("Código incorrecto");
+    }
+  };
+
+  window.closeAdmin = () => {
+    state.isAdmin = false;
+    refreshUI();
+  };
+
+  // COMPRIMIR FOTOS
+  window.handlePhoto = (input, previewId) => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxW = 720;
+        const scale = Math.min(1, maxW / img.width);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.68);
+        tempPhotos[previewId] = dataUrl;
+        const prev = document.getElementById(previewId);
+        if (prev) {
+          prev.src = dataUrl;
+          prev.classList.remove("hidden");
+        }
+        showToast("Foto cargada correctamente");
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // AUTH CLIENTE
+  window.switchAuth = (mode) => {
+    document.getElementById("tabLogin").classList.toggle("active", mode === "login");
+    document.getElementById("tabReg").classList.toggle("active", mode === "reg");
+    document.getElementById("formLogin").classList.toggle("hidden", mode !== "login");
+    document.getElementById("formReg").classList.toggle("hidden", mode !== "reg");
+    if (mode === "reg") checkCuposOpen();
+  };
+
+  window.toggleRegMethod = () => {
+    const m = document.getElementById("regMethod").value;
+    document.getElementById("regPmBox").classList.toggle("hidden", m !== "pm");
+    document.getElementById("regBinBox").classList.toggle("hidden", m !== "binance");
+  };
+
+  function checkCuposOpen() {
+    const totalUsers = Object.keys(state.users).length;
+    const full = totalUsers >= Number(state.cfg.maxUsers);
+    const al = document.getElementById("regClosedAlert");
+    const rf = document.getElementById("regFields");
+    if (full) {
+      al.textContent = state.cfg.closedMsg;
+      al.classList.remove("hidden");
+      rf.classList.add("hidden");
+    } else {
+      al.classList.add("hidden");
+      rf.classList.remove("hidden");
+    }
+  }
+
+  window.registerClient = async () => {
+    const nombre = document.getElementById("regNombre").value.trim();
+    const cedula = document.getElementById("regCedula").value.replace(/\D/g, "");
+    const phone = document.getElementById("regPhone").value.trim();
+    const pin = document.getElementById("regPin").value.trim();
+    const method = document.getElementById("regMethod").value;
+    const idPhoto = tempPhotos["regIdPreview"];
+
+    if (!nombre || cedula.length < 6 || !phone || pin.length !== 4) {
+      return showToast("Completa todos los datos y PIN de 4 números");
+    }
+    if (state.users[cedula]) {
+      return showToast("Esa cédula ya está registrada. Inicia sesión.");
+    }
+    if (!idPhoto) {
+      return showToast("Debes subir la foto de tu cédula");
+    }
+
+    let payInfo = "";
+    if (method === "pm") {
+      const bank = document.getElementById("regBank").value;
+      const pmPhone = document.getElementById("regPmPhone").value.trim();
+      const pmCed = document.getElementById("regPmCedula").value.replace(/\D/g, "");
+      if (!pmPhone || !pmCed) return showToast("Completa los datos de tu Pago Móvil");
+      payInfo = `${bank} • ${pmPhone} • V-${pmCed}`;
+    } else {
+      const bin = document.getElementById("regBinId").value.trim();
+      if (!bin) return showToast("Escribe tu correo o ID de Binance");
+      payInfo = `Binance Pay: ${bin}`;
+    }
+
+    const userObj = {
+      nombre, cedula, phone, pin, method, payInfo, idPhoto,
+      level: 1, paidCount: 0, blocked: false, blockReason: "",
+      createdAt: Date.now()
+    };
+
+    showToast("Creando cuenta...");
+    await setDoc(doc(db, "users", cedula), userObj);
+    state.currentUserCedula = cedula;
+    localStorage.setItem("cc_session_cedula", cedula);
+    showToast("¡Cuenta creada con éxito!");
+    refreshUI();
+  };
+
+  window.loginClient = () => {
+    const cedula = document.getElementById("logCedula").value.replace(/\D/g, "");
+    const pin = document.getElementById("logPin").value.trim();
+    const u = state.users[cedula];
+    if (!u) return showToast("Cédula no registrada");
+    if (String(u.pin) !== pin) return showToast("PIN incorrecto");
+    state.currentUserCedula = cedula;
+    localStorage.setItem("cc_session_cedula", cedula);
+    refreshUI();
+  };
+
+  window.logoutClient = () => {
+    state.currentUserCedula = null;
+    localStorage.removeItem("cc_session_cedula");
+    refreshUI();
+  };
+
+  // PANEL CLIENTE CON CUOTAS
+  function getLevelRule(lvl) {
+    const lvls = state.cfg.levels || DEFAULT_CFG.levels;
+    const raw = lvls.find(x => Number(x.lvl) === Number(lvl)) || lvls[lvls.length - 1];
+    return {
+      lvl: Number(raw.lvl),
+      amount: Number(raw.amount) || 1,
+      pct: Number(raw.pct) || 25,
+      quotas: Number(raw.quotas) || 2,
+      freq: raw.freq || "semanal"
+    };
+  }
+
+  function renderClientView() {
+    const u = state.users[state.currentUserCedula];
+    if (!u) return;
+    const rate = Number(state.cfg.rate) || 1;
+    const rule = getLevelRule(u.level);
+    const paysReq = Number(state.cfg.paysPerLvl) || 5;
+    const progInLvl = u.paidCount % paysReq;
+
+    document.getElementById("cliName").textContent = u.nombre.split(" ")[0];
+    document.getElementById("cliLvlBadge").textContent = `Nivel ${u.level}`;
+    document.getElementById("cliRateDisplay").textContent = `Bs. ${rate.toFixed(2)}`;
+    document.getElementById("cliCupoUsd").textContent = `$${rule.amount.toFixed(2)}`;
+    document.getElementById("cliCupoBs").textContent = `= Bs. ${(rule.amount * rate).toFixed(2)}`;
+    document.getElementById("cliProgText").textContent = `${progInLvl} / ${paysReq} préstamos`;
+    document.getElementById("cliProgBar").style.width = `${Math.min(100, (progInLvl / paysReq) * 100)}%`;
+    document.getElementById("cliNextLvlText").textContent = `Meta: Nivel ${u.level + 1}`;
+
+    const myLoans = Object.values(state.loans).filter(l => l.cedula === u.cedula).sort((a,b) => b.createdAt - a.createdAt);
+    const todayStr = new Date().toLocaleDateString();
+    const todayCount = myLoans.filter(l => new Date(l.createdAt).toLocaleDateString() === todayStr).length;
+    document.getElementById("cliDailyText").textContent = `Solicitudes hoy: ${todayCount}/${state.cfg.maxDaily}`;
+
+    const blkBox = document.getElementById("cliBlockedBox");
+    const actBox = document.getElementById("cliActiveLoanBox");
+    const reqBox = document.getElementById("cliRequestBox");
+
+    if (u.blocked) {
+      blkBox.innerHTML = `<strong>⛔ Cuenta Suspendida:</strong> ${u.blockReason || "Bloqueada por administración."}`;
+      blkBox.classList.remove("hidden");
+      actBox.classList.add("hidden");
+      reqBox.classList.add("hidden");
+      renderClientHistory(myLoans);
+      return;
+    } else {
+      blkBox.classList.add("hidden");
+    }
+
+    const openLoan = myLoans.find(l => ["pendiente", "activo", "pagando"].includes(l.status));
+
+    if (openLoan) {
+      reqBox.classList.add("hidden");
+      actBox.classList.remove("hidden");
+
+      if (openLoan.status === "pendiente") {
+        actBox.innerHTML = `
+          <div style="text-align:center;padding:8px 0;">
+            <div style="font-size:34px;">⏳</div>
+            <h3 style="margin:6px 0;">Solicitud en Revisión</h3>
+            <p style="font-size:13px;color:var(--muted);">Pediste <strong>$${openLoan.amount.toFixed(2)} USD</strong> en <strong>${openLoan.quotas} cuotas ${openLoan.freq}es</strong>.<br>En breve te transferimos a:<br><strong>${openLoan.payInfo}</strong></p>
+          </div>`;
+      } else {
+        const schedule = openLoan.schedule || [];
+        const nextInst = schedule.find(s => s.status === "pendiente" || s.status === "revision");
+        const isLate = nextInst && nextInst.status === "pendiente" && Date.now() > nextInst.dueDate;
+        const paidCountInst = schedule.filter(s => s.status === "pagado").length;
+
+        const scheduleHtml = schedule.map(s => {
+          const isNext = nextInst && s.num === nextInst.num;
+          const bVal = (s.amount * rate).toFixed(2);
+          const badge = s.status === "pagado"
+            ? `<span class="pill pill-pag">PAGADA</span>`
+            : s.status === "revision"
+              ? `<span class="pill pill-pend">EN REVISIÓN</span>`
+              : Date.now() > s.dueDate
+                ? `<span class="pill pill-mor">VENCIDA</span>`
+                : `<span class="pill pill-act">PENDIENTE</span>`;
+          return `
+            <div class="inst-item ${isNext ? 'next-due' : ''}">
+              <div>
+                <strong>Cuota ${s.num} de ${openLoan.quotas}</strong> • Vence: ${new Date(s.dueDate).toLocaleDateString()}<br>
+                <span style="color:var(--primary);font-weight:700;">$${s.amount.toFixed(2)} (Bs. ${bVal})</span>
+              </div>
+              ${badge}
+            </div>`;
+        }).join("");
+
+        let payFormHtml = "";
+        if (nextInst && nextInst.status === "revision") {
+          payFormHtml = `
+            <div class="alert alert-warn" style="margin-top:10px;">
+              🧾 <strong>Cuota ${nextInst.num} en verificación:</strong> Recibimos tu comprobante (Ref: <strong>${nextInst.payRef}</strong>). Apenas lo confirmemos se actualiza tu plan.
+            </div>`;
+        } else if (nextInst) {
+          const qBs = (nextInst.amount * rate).toFixed(2);
+          const waMsg = encodeURIComponent(`Hola, soy ${u.nombre} (C.I. ${u.cedula}). Reporto el pago de mi Cuota ${nextInst.num}/${openLoan.quotas} por $${nextInst.amount.toFixed(2)} (Bs. ${qBs}) en ${state.cfg.appName}.`);
+          payFormHtml = `
+            <div class="alert alert-info" style="font-size:12px;margin-top:10px;">
+              <strong>Paga tu Cuota ${nextInst.num} ($${nextInst.amount.toFixed(2)} / Bs. ${qBs}) aquí:</strong><br>
+              • Pago Móvil: ${state.cfg.ownerPm}<br>
+              • Binance Pay: ${state.cfg.ownerBin}
+            </div>
+            <label>Referencia del pago (Cuota ${nextInst.num})</label>
+            <input type="text" id="payRefInput" placeholder="Últimos 6 dígitos o ID">
+            <label>Sube capture del comprobante</label>
+            <input type="file" accept="image/*" onchange="handlePhoto(this, 'payProofPreview')">
+            <img id="payProofPreview" class="preview-img hidden">
+            <button class="btn btn-primary" onclick="submitInstallmentPayment('${openLoan.id}', ${nextInst.num})">Enviar Pago Cuota ${nextInst.num}</button>
+            <a class="btn btn-secondary" target="_blank" href="https://wa.me/${state.cfg.wa}?text=${waMsg}">Avisar por WhatsApp</a>
+          `;
+        }
+
+        actBox.innerHTML = `
+          <h3 class="card-title">
+            Plan de Cuotas (${paidCountInst}/${openLoan.quotas})
+            ${isLate ? '<span class="pill pill-mor">CUOTA VENCIDA</span>' : '<span class="pill pill-act">AL DÍA</span>'}
+          </h3>
+          <div style="margin-bottom:8px;">${scheduleHtml}</div>
+          ${payFormHtml}
+        `;
+      }
+    } else {
+      actBox.classList.add("hidden");
+      if (todayCount >= Number(state.cfg.maxDaily)) {
+        reqBox.classList.remove("hidden");
+        reqBox.innerHTML = `<div class="alert alert-warn" style="margin:0;">Alcanzaste el límite de <strong>${state.cfg.maxDaily} solicitudes</strong> por hoy. Vuelve mañana para pedir otro cupo.</div>`;
+      } else {
+        const recUsd = rule.amount;
+        const intUsd = recUsd * (rule.pct / 100);
+        const totUsd = recUsd + intUsd;
+        const qUsd = totUsd / rule.quotas;
+        const freqLabel = rule.freq === "quincenal" ? "Quincenales (cada 15 días)" : "Semanales (cada 7 días)";
+
+        reqBox.classList.remove("hidden");
+        document.getElementById("reqRecUsd").textContent = `$${recUsd.toFixed(2)} (Bs. ${(recUsd * rate).toFixed(2)})`;
+        document.getElementById("reqPct").textContent = rule.pct;
+        document.getElementById("reqIntUsd").textContent = `$${intUsd.toFixed(2)}`;
+        document.getElementById("reqTotUsd").textContent = `$${totUsd.toFixed(2)} (Bs. ${(totUsd * rate).toFixed(2)})`;
+        document.getElementById("reqPlanText").textContent = `${rule.quotas} cuotas ${freqLabel}`;
+        document.getElementById("reqQuotaVal").textContent = `$${qUsd.toFixed(2)} (Bs. ${(qUsd * rate).toFixed(2)})`;
+        document.getElementById("reqDest").textContent = u.payInfo;
+      }
+    }
+
+    renderClientHistory(myLoans);
+  }
+
+  function renderClientHistory(myLoans) {
+    const wrap = document.getElementById("cliHistoryList");
+    if (!myLoans.length) {
+      wrap.innerHTML = "Aún no tienes préstamos registrados.";
+      return;
+    }
+    wrap.innerHTML = myLoans.slice(0, 8).map(l => `
+      <div class="row" style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div>
+          <strong>$${l.amount.toFixed(2)} → $${l.totalDue.toFixed(2)}</strong> (${l.quotas || 1} cuotas)
+          <div style="font-size:11px;color:var(--muted);">${new Date(l.createdAt).toLocaleDateString()}</div>
+        </div>
+        <span class="pill ${l.status === 'pagado' ? 'pill-pag' : l.status === 'activo' ? 'pill-act' : 'pill-pend'}">${l.status.toUpperCase()}</span>
+      </div>
+    `).join("");
+  }
+
+  window.requestLoan = async () => {
+    const u = state.users[state.currentUserCedula];
+    const rule = getLevelRule(u.level);
+    const amount = rule.amount;
+    const totalDue = Number((amount + (amount * (rule.pct / 100))).toFixed(2));
+    const quotas = rule.quotas;
+    const freq = rule.freq;
+    const stepDays = freq === "quincenal" ? 15 : 7;
+    const quotaAmount = Number((totalDue / quotas).toFixed(2));
+    const id = "L" + Date.now();
+
+    await setDoc(doc(db, "loans", id), {
+      id, cedula: u.cedula, nombre: u.nombre, phone: u.phone, payInfo: u.payInfo,
+      amount, totalDue, quotas, freq, stepDays, quotaAmount, pct: rule.pct,
+      status: "pendiente", createdAt: Date.now(), schedule: []
+    });
+    showToast("¡Solicitud enviada! Te avisamos al transferir.");
+  };
+
+  window.submitInstallmentPayment = async (loanId, instNum) => {
+    const ref = document.getElementById("payRefInput").value.trim();
+    const proof = tempPhotos["payProofPreview"];
+    if (!ref) return showToast("Escribe el número de referencia");
+    if (!proof) return showToast("Sube la foto del comprobante");
+    const loan = state.loans[loanId];
+    const newSchedule = (loan.schedule || []).map(s => {
+      if (s.num === instNum) {
+        return { ...s, status: "revision", payRef: ref, payProof: proof, sentAt: Date.now() };
+      }
+      return s;
+    });
+    await setDoc(doc(db, "loans", loanId), {
+      ...loan, status: "pagando", schedule: newSchedule
+    });
+    delete tempPhotos["payProofPreview"];
+    showToast(`Comprobante de Cuota ${instNum} enviado`);
+  };
+
+  // PANEL ADMIN
+  window.switchAdminTab = (tab) => {
+    document.getElementById("admTabLoans").classList.toggle("active", tab === "loans");
+    document.getElementById("admTabUsers").classList.toggle("active", tab === "users");
+    document.getElementById("admTabCfg").classList.toggle("active", tab === "cfg");
+    document.getElementById("admPaneLoans").classList.toggle("hidden", tab !== "loans");
+    document.getElementById("admPaneUsers").classList.toggle("hidden", tab !== "users");
+    document.getElementById("admPaneCfg").classList.toggle("hidden", tab !== "cfg");
+  };
+
+  function renderAdminAll() {
+    const allLoans = Object.values(state.loans).sort((a,b) => b.createdAt - a.createdAt);
+    const allUsers = Object.values(state.users);
+
+    let enCalle = 0, ganancia = 0;
+    allLoans.forEach(l => {
+      if (l.status === "activo" || l.status === "pagando") {
+        const paidInsts = (l.schedule || []).filter(s => s.status === "pagado").reduce((acc, x) => acc + Number(x.amount), 0);
+        enCalle += Math.max(0, Number(l.amount) - paidInsts);
+      }
+      if (l.status === "pagado") ganancia += (Number(l.totalDue) - Number(l.amount));
+    });
+    const capDisp = Number(state.cfg.capital) - enCalle + ganancia;
+
+    document.getElementById("admCapDisp").textContent = `$${capDisp.toFixed(2)}`;
+    document.getElementById("admEnCalle").textContent = `$${enCalle.toFixed(2)}`;
+    document.getElementById("admGanancia").textContent = `$${ganancia.toFixed(2)}`;
+    document.getElementById("cntLoans").textContent = allLoans.filter(l => l.status !== "pagado" && l.status !== "rechazado").length;
+    document.getElementById("cntUsers").textContent = allUsers.length;
+
+    const lWrap = document.getElementById("admLoansList");
+    if (!allLoans.length) {
+      lWrap.innerHTML = `<div class="card" style="text-align:center;color:var(--muted);">Aún no hay solicitudes de préstamo.</div>`;
+    } else {
+      lWrap.innerHTML = allLoans.map(l => {
+        const rate = Number(state.cfg.rate) || 1;
+        const sch = l.schedule || [];
+        const revInst = sch.find(s => s.status === "revision");
+        const nextPend = sch.find(s => s.status === "pendiente");
+        const paidCnt = sch.filter(s => s.status === "pagado").length;
+        const isLate = nextPend && Date.now() > nextPend.dueDate && l.status === "activo";
+
+        let actions = "";
+        if (l.status === "pendiente") {
+          actions = `
+            <button class="btn btn-sm btn-primary" onclick="approveLoan('${l.id}')">Aprobar (${l.quotas} cuotas)</button>
+            <button class="btn btn-sm btn-danger" onclick="rejectLoan('${l.id}')">Rechazar</button>
+          `;
+        } else if (revInst) {
+          actions = `
+            <button class="btn btn-sm btn-secondary" onclick="openPhoto('${revInst.payProof}', 'Cuota ${revInst.num} • Ref: ${revInst.payRef}')">Ver Comprobante C${revInst.num}</button>
+            <button class="btn btn-sm btn-primary" onclick="confirmInstallment('${l.id}', ${revInst.num})">Aprobar Cuota ${revInst.num}</button>
+          `;
+        } else if (nextPend && l.status === "activo") {
+          actions = `<button class="btn btn-sm btn-warn" onclick="confirmInstallment('${l.id}', ${nextPend.num})">Marcar Cuota ${nextPend.num} Pagada</button>`;
+        }
+
+        return `
+          <div class="item-box">
+            <div class="row">
+              <strong>${l.nombre} <small style="color:var(--muted);">(V-${l.cedula})</small></strong>
+              <span class="pill ${l.status === 'pagado' ? 'pill-pag' : isLate ? 'pill-mor' : 'pill-pend'}">${isLate ? 'MORA' : l.status.toUpperCase()}</span>
+            </div>
+            <div style="font-size:12px;margin:6px 0;line-height:1.5;">
+              Prestar: <strong>$${l.amount.toFixed(2)} (Bs. ${(l.amount * rate).toFixed(2)})</strong> • Total: <strong>$${l.totalDue.toFixed(2)}</strong><br>
+              Plan: <strong>${l.quotas || 1} cuotas ${l.freq || 'semanal'}es</strong> de <strong>$${(l.quotaAmount || l.totalDue).toFixed(2)}</strong> (Pagadas: ${paidCnt}/${l.quotas || 1})<br>
+              Cuenta: <strong>${l.payInfo}</strong>
+              ${revInst ? `<br>Pago reportado Cuota ${revInst.num} • Ref: <strong>${revInst.payRef}</strong>` : ""}
+            </div>
+            <div class="row" style="justify-content:flex-start;flex-wrap:wrap;">${actions}</div>
+          </div>
+        `;
+      }).join("");
+    }
+    renderAdminUsers();
+  }
+
+  window.renderAdminUsers = () => {
+    const q = (document.getElementById("admSearchUser").value || "").toLowerCase();
+    const list = Object.values(state.users).filter(u => u.nombre.toLowerCase().includes(q) || u.cedula.includes(q));
+    const uWrap = document.getElementById("admUsersList");
+    if (!list.length) {
+      uWrap.innerHTML = `<div class="card" style="text-align:center;color:var(--muted);">No hay clientes registrados.</div>`;
+      return;
+    }
+    uWrap.innerHTML = list.map(u => `
+      <div class="item-box">
+        <div class="row">
+          <strong>${u.nombre} (V-${u.cedula})</strong>
+          <span class="badge-lvl">Nivel ${u.level}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin:4px 0 8px;">
+          Tel: ${u.phone} • Préstamos pagados: ${u.paidCount} • PIN: ${u.pin}<br>${u.payInfo}
+        </div>
+        <div class="row" style="justify-content:flex-start;flex-wrap:wrap;">
+          <button class="btn btn-sm btn-secondary" onclick="openPhoto('${u.idPhoto}', 'Cédula de ${u.nombre}')">Ver Cédula</button>
+          <button class="btn btn-sm btn-primary" onclick="changeUserLvl('${u.cedula}', 1)">+ Nivel</button>
+          <button class="btn btn-sm ${u.blocked ? 'btn-primary' : 'btn-danger'}" onclick="toggleBlockUser('${u.cedula}')">${u.blocked ? 'Desbloquear' : 'Bloquear'}</button>
+        </div>
+      </div>
+    `).join("");
+  };
+
+  window.approveLoan = async (id) => {
+    const l = state.loans[id];
+    const quotas = Number(l.quotas) || 2;
+    const stepDays = l.freq === "quincenal" ? 15 : 7;
+    const qAmt = Number((Number(l.totalDue) / quotas).toFixed(2));
+    const now = Date.now();
+    const schedule = [];
+    for (let i = 1; i <= quotas; i++) {
+      schedule.push({
+        num: i,
+        amount: qAmt,
+        dueDate: now + (i * stepDays * 86400000),
+        status: "pendiente"
+      });
+    }
+    await setDoc(doc(db, "loans", id), { ...l, status: "activo", approvedAt: now, schedule });
+    showToast(`Préstamo activado en ${quotas} cuotas`);
+  };
+
+  window.rejectLoan = async (id) => {
+    const l = state.loans[id];
+    await setDoc(doc(db, "loans", id), { ...l, status: "rechazado" });
+    showToast("Solicitud rechazada");
+  };
+
+  window.confirmInstallment = async (id, instNum) => {
+    const l = state.loans[id];
+    const newSchedule = (l.schedule || []).map(s => {
+      if (s.num === instNum) return { ...s, status: "pagado", confirmedAt: Date.now() };
+      return s;
+    });
+    const allPaid = newSchedule.every(s => s.status === "pagado");
+    const nextStatus = allPaid ? "pagado" : "activo";
+
+    await setDoc(doc(db, "loans", id), {
+      ...l,
+      status: nextStatus,
+      schedule: newSchedule,
+      paidAt: allPaid ? Date.now() : null
+    });
+
+    if (allPaid) {
+      const u = state.users[l.cedula];
+      if (u) {
+        const newPaid = (u.paidCount || 0) + 1;
+        const paysReq = Number(state.cfg.paysPerLvl) || 5;
+        const calcLvl = Math.floor(newPaid / paysReq) + 1;
+        const newLvl = Math.max(u.level || 1, calcLvl);
+        await setDoc(doc(db, "users", u.cedula), { ...u, paidCount: newPaid, level: newLvl });
+      }
+      showToast("¡Préstamo completado y cupo liberado!");
+    } else {
+      showToast(`¡Cuota ${instNum} confirmada!`);
+    }
+  };
+
+  window.changeUserLvl = async (ced, delta) => {
+    const u = state.users[ced];
+    const next = Math.max(1, (u.level || 1) + delta);
+    await setDoc(doc(db, "users", ced), { ...u, level: next });
+    showToast(`Nivel actualizado a ${next}`);
+  };
+
+  window.toggleBlockUser = async (ced) => {
+    const u = state.users[ced];
+    const nextBlock = !u.blocked;
+    const reason = nextBlock ? (prompt("Motivo del bloqueo:", "Mora en cuota") || "Suspendida") : "";
+    await setDoc(doc(db, "users", ced), { ...u, blocked: nextBlock, blockReason: reason });
+    showToast(nextBlock ? "Cliente bloqueado" : "Cliente desbloqueado");
+  };
+
+  window.openPhoto = (src, title) => {
+    document.getElementById("photoModalTitle").textContent = title;
+    document.getElementById("photoModalImg").src = src;
+    document.getElementById("photoModal").classList.remove("hidden");
+  };
+
+  // CONFIGURACIÓN ADMIN
+  window.toggleRateInput = () => {
+    const isAuto = document.getElementById("cfgAutoRate").value === "true";
+    document.getElementById("cfgRate").disabled = isAuto;
+  };
+
+  function loadAdminCfgForm() {
+    const c = state.cfg;
+    document.getElementById("cfgAppName").value = c.appName;
+    document.getElementById("cfgPin").value = c.adminPin;
+    document.getElementById("cfgAutoRate").value = String(c.autoRate !== false);
+    document.getElementById("cfgRate").value = c.rate;
+    toggleRateInput();
+    document.getElementById("cfgCapital").value = c.capital;
+    document.getElementById("cfgMaxUsers").value = c.maxUsers;
+    document.getElementById("cfgPaysPerLvl").value = c.paysPerLvl;
+    document.getElementById("cfgMaxDaily").value = c.maxDaily;
+    document.getElementById("cfgWa").value = c.wa;
+    document.getElementById("cfgOwnerPm").value = c.ownerPm;
+    document.getElementById("cfgOwnerBin").value = c.ownerBin;
+    document.getElementById("cfgClosedMsg").value = c.closedMsg;
+    renderLevelRows(c.levels || DEFAULT_CFG.levels);
+  }
+
+  function renderLevelRows(levels) {
+    const wrap = document.getElementById("cfgLevelsWrap");
+    wrap.innerHTML = levels.map((lv, idx) => `
+      <div class="lvl-row" data-idx="${idx}">
+        <strong style="text-align:center;font-size:11px;">Niv ${idx + 1}</strong>
+        <input type="number" step="0.5" class="lv-amt" value="${lv.amount}">
+        <input type="number" class="lv-pct" value="${lv.pct}">
+        <input type="number" class="lv-quo" value="${lv.quotas || 2}">
+        <select class="lv-freq">
+          <option value="semanal" ${(lv.freq || 'semanal') === 'semanal' ? 'selected' : ''}>Semanal</option>
+          <option value="quincenal" ${lv.freq === 'quincenal' ? 'selected' : ''}>Quincenal</option>
+        </select>
+        <button class="btn btn-sm btn-danger" style="padding:5px;" onclick="this.parentElement.remove()">X</button>
+      </div>
+    `).join("");
+  }
+
+  window.addLevelRow = () => {
+    const wrap = document.getElementById("cfgLevelsWrap");
+    const count = wrap.children.length + 1;
+    const div = document.createElement("div");
+    div.className = "lvl-row";
+    div.innerHTML = `
+      <strong style="text-align:center;font-size:11px;">Niv ${count}</strong>
+      <input type="number" step="0.5" class="lv-amt" value="50">
+      <input type="number" class="lv-pct" value="20">
+      <input type="number" class="lv-quo" value="4">
+      <select class="lv-freq">
+        <option value="semanal">Semanal</option>
+        <option value="quincenal" selected>Quincenal</option>
+      </select>
+      <button class="btn btn-sm btn-danger" style="padding:5px;" onclick="this.parentElement.remove()">X</button>
+    `;
+    wrap.appendChild(div);
+  };
+
+  window.saveAdminConfig = async () => {
+    const rows = document.querySelectorAll("#cfgLevelsWrap .lvl-row");
+    const levels = Array.from(rows).map((r, i) => ({
+      lvl: i + 1,
+      amount: parseFloat(r.querySelector(".lv-amt").value) || 1,
+      pct: parseFloat(r.querySelector(".lv-pct").value) || 25,
+      quotas: parseInt(r.querySelector(".lv-quo").value) || 2,
+      freq: r.querySelector(".lv-freq").value || "semanal"
+    }));
+
+    const autoRate = document.getElementById("cfgAutoRate").value === "true";
+    const rateClean = parseFloat(String(document.getElementById("cfgRate").value).replace(",", ".")) || 52.50;
+
+    const newCfg = {
+      appName: document.getElementById("cfgAppName").value.trim() || "CrediCupo Express",
+      adminPin: document.getElementById("cfgPin").value.trim() || "7788",
+      autoRate,
+      rate: rateClean,
+      capital: parseFloat(document.getElementById("cfgCapital").value) || 50,
+      maxUsers: parseInt(document.getElementById("cfgMaxUsers").value) || 50,
+      paysPerLvl: parseInt(document.getElementById("cfgPaysPerLvl").value) || 5,
+      maxDaily: parseInt(document.getElementById("cfgMaxDaily").value) || 3,
+      wa: document.getElementById("cfgWa").value.trim(),
+      ownerPm: document.getElementById("cfgOwnerPm").value.trim(),
+      ownerBin: document.getElementById("cfgOwnerBin").value.trim(),
+      closedMsg: document.getElementById("cfgClosedMsg").value.trim(),
+      levels
+    };
+
+    await setDoc(doc(db, "credicupo", "config"), newCfg);
+    if (autoRate) {
+      state.autoFetchedOnce = false;
+      syncBcvAutoRate();
+    }
+    showToast("💾 ¡Cuotas y reglas guardadas en la nube!");
+  };
+</script>
+</body>
+</html>
