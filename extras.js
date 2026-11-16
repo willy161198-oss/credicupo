@@ -1,10 +1,64 @@
 // ============================================================
-// MÓDULO EXTRA: MÉTODOS DE COBRO DEL CLIENTE (BVC 0104, UBII/UVP, PM, BINANCE)
+// MÓDULO COMPLETO EXTRAS - CREDICUPO EXPRESS
+// Incluye:
+// 1. BVC (0104) con PM/Correo y Ubii Pagos (UVP) para clientes y dueño
+// 2. Botón "Cambiar" cuenta de cobro para clientes ya registrados
+// 3. Capture de desembolso del dueño al aprobar préstamo
+// 4. Notificaciones directas al Telegram del dueño + timbre en vivo
 // ============================================================
-import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { doc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-(function iniciarModuloMetodosCliente() {
-  // 1. AGREGAR BVC (0104) AL SELECTOR DE BANCOS DE PAGO MÓVIL
+(function iniciarCrediCupoExtras() {
+  let ownerProofDataUrl = "";
+  let currentApproveLoanId = null;
+  let knownSig = null;
+
+  // ------------------------------------------------------------
+  // A. SONIDO DE ALERTA Y ENVÍO DE MENSAJE A TELEGRAM DEL DUEÑO
+  // ------------------------------------------------------------
+  function playChime() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [880, 1174].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.18, ctx.currentTime + idx * 0.14);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.14 + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + idx * 0.14);
+        osc.stop(ctx.currentTime + idx * 0.14 + 0.36);
+      });
+    } catch (e) {}
+  }
+
+  window.sendOwnerTelegramAlert = async (htmlText) => {
+    if (!window.CC || !window.CC.state) return;
+    const c = window.CC.state.cfg || {};
+    const token = (c.tgBotToken || "").trim();
+    const chatId = (c.tgOwnerChatId || "").trim();
+    if (!token || !chatId) return;
+
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: htmlText,
+          parse_mode: "HTML"
+        })
+      });
+    } catch (err) {
+      console.warn("Error enviando alerta Telegram:", err);
+    }
+  };
+
+  // ------------------------------------------------------------
+  // B. MÉTODOS DE COBRO DEL CLIENTE (BVC 0104, UBII/UVP, PM, BINANCE)
+  // ------------------------------------------------------------
   const bankSel = document.getElementById("regBank");
   if (bankSel && !Array.from(bankSel.options).some(o => o.value === "Venezolano de Crédito (0104)")) {
     const optBvc = document.createElement("option");
@@ -13,7 +67,6 @@ import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase
     bankSel.insertBefore(optBvc, bankSel.firstChild);
   }
 
-  // 2. AMPLIAR LAS OPCIONES DE COBRO EN EL REGISTRO DEL CLIENTE
   const methodSel = document.getElementById("regMethod");
   const binBox = document.getElementById("regBinBox");
   const pmBox = document.getElementById("regPmBox");
@@ -27,7 +80,6 @@ import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase
       <option value="binance">Binance Pay (USDT)</option>
     `;
 
-    // Caja extra para BVC (0104) y Ubii (UVP)
     const customBox = document.createElement("div");
     customBox.id = "regCustomPayBox";
     customBox.className = "hidden";
@@ -73,7 +125,6 @@ import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase
       document.getElementById("ubiiFieldsWrap").classList.toggle("hidden", m !== "ubii");
     };
 
-    // Reescribir registro para soportar BVC (PM + Correo) y Ubii (UVP)
     window.registerClient = async () => {
       if (!window.CC) return;
       const { db, state, showToast, refreshUI } = window.CC;
@@ -144,7 +195,271 @@ import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase
     };
   }
 
-  // 3. PERMITIR QUE EL CLIENTE YA REGISTRADO CAMBIE SU MÉTODO DE COBRO DESDE SU PANEL
+  // ------------------------------------------------------------
+  // C. MODAL PARA QUE EL DUEÑO SUBA CAPTURE AL APROBAR PRÉSTAMO
+  // ------------------------------------------------------------
+  if (!document.getElementById("ownerDisburseModal")) {
+    const modal = document.createElement("div");
+    modal.id = "ownerDisburseModal";
+    modal.className = "modal-bg hidden";
+    modal.onclick = () => modal.classList.add("hidden");
+    modal.innerHTML = `
+      <div class="modal" onclick="event.stopPropagation()">
+        <h3 class="card-title">💸 Aprobar y Subir Capture de Pago</h3>
+        <div id="ownerDisbSummary" class="alert alert-info" style="font-size:12px;"></div>
+
+        <label>Referencia de tu transferencia</label>
+        <input type="text" id="ownerDisbRef" placeholder="Ej: 458912 o Hash">
+
+        <label>Sube capture del pago realizado al cliente</label>
+        <input type="file" id="ownerDisbFile" accept="image/*">
+        <img id="ownerDisbPreview" class="preview-img hidden">
+
+        <label>Escribe tu Código Maestro de Dueño para confirmar</label>
+        <input type="password" id="ownerDisbPin" inputmode="numeric" placeholder="****">
+
+        <button type="button" class="btn btn-primary" id="btnConfirmDisb">Confirmar Desembolso y Activar</button>
+        <button type="button" class="btn btn-secondary" onclick="document.getElementById('ownerDisburseModal').classList.add('hidden')">Cancelar</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById("ownerDisbFile").addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const maxW = 720;
+          const scale = Math.min(1, maxW / img.width);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          ownerProofDataUrl = canvas.toDataURL("image/jpeg", 0.68);
+          const prev = document.getElementById("ownerDisbPreview");
+          prev.src = ownerProofDataUrl;
+          prev.classList.remove("hidden");
+          if (window.CC) window.CC.showToast("📸 Capture de pago listo");
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    document.getElementById("btnConfirmDisb").addEventListener("click", async () => {
+      if (!window.CC || !currentApproveLoanId) return;
+      const { db, state, showToast } = window.CC;
+
+      const pin = document.getElementById("ownerDisbPin").value.trim();
+      if (pin !== String(state.cfg.adminPin)) {
+        return showToast("⛔ Código Maestro incorrecto");
+      }
+
+      const ref = document.getElementById("ownerDisbRef").value.trim();
+      if (!ownerProofDataUrl) {
+        return showToast("Debes subir el capture del pago al cliente");
+      }
+
+      const l = state.loans[currentApproveLoanId];
+      if (!l) return;
+
+      const quotas = Number(l.quotas) || 2;
+      const stepDays = String(l.freq || "").toLowerCase() === "quincenal" ? 15 : 7;
+      const qAmt = Number((Number(l.totalDue) / quotas).toFixed(2));
+      const now = Date.now();
+      const schedule = [];
+      for (let i = 1; i <= quotas; i++) {
+        schedule.push({
+          num: i,
+          amount: qAmt,
+          dueDate: now + (i * stepDays * 86400000),
+          status: "pendiente"
+        });
+      }
+
+      state.expandedLoans[currentApproveLoanId] = true;
+      await updateDoc(doc(db, "loans", currentApproveLoanId), {
+        quotas,
+        freq: stepDays === 15 ? "quincenal" : "semanal",
+        stepDays,
+        status: "activo",
+        approvedAt: now,
+        schedule,
+        disburseProof: ownerProofDataUrl,
+        disburseRef: ref || "Sin ref."
+      });
+
+      document.getElementById("ownerDisburseModal").classList.add("hidden");
+      showToast("✅ Préstamo activado y capture guardado");
+    });
+  }
+
+  window.askApproveLoan = (id) => {
+    if (!window.CC) return;
+    const { state } = window.CC;
+    const l = state.loans[id];
+    if (!l) return;
+
+    currentApproveLoanId = id;
+    ownerProofDataUrl = "";
+    const rate = Number(state.cfg.rate) || 1;
+    const bs = (Number(l.amount) * rate).toFixed(2);
+
+    document.getElementById("ownerDisbSummary").innerHTML = `
+      Cliente: <strong>${l.nombre}</strong> (V-${l.cedula})<br>
+      Monto a transferir: <strong>$${Number(l.amount).toFixed(2)} USD (Bs. ${bs})</strong><br>
+      Cuenta destino: <strong>${l.payInfo}</strong>
+    `;
+    document.getElementById("ownerDisbRef").value = "";
+    document.getElementById("ownerDisbFile").value = "";
+    document.getElementById("ownerDisbPin").value = "";
+    const prev = document.getElementById("ownerDisbPreview");
+    prev.src = "";
+    prev.classList.add("hidden");
+
+    document.getElementById("ownerDisburseModal").classList.remove("hidden");
+  };
+
+  // ------------------------------------------------------------
+  // D. ENGANCHAR NOTIFICACIONES EN SOLICITUDES Y PAGOS DEL CLIENTE
+  // ------------------------------------------------------------
+  const origRequestLoan = window.requestLoan;
+  if (origRequestLoan && !origRequestLoan._notifWrapped) {
+    const wrappedReq = async () => {
+      await origRequestLoan();
+      if (!window.CC) return;
+      const { state } = window.CC;
+      const u = state.users[state.currentUserCedula];
+      if (!u) return;
+      const rule = window.CC.getLevelRule(u.level);
+      const sel = document.getElementById("reqQuotaSelect");
+      const q = sel ? sel.value : rule.quotas;
+      await window.sendOwnerTelegramAlert(
+        `🆕 <b>NUEVA SOLICITUD DE PRÉSTAMO</b>\n\n` +
+        `👤 Cliente: <b>${u.nombre}</b> (V-${u.cedula})\n` +
+        `💵 Monto: <b>$${rule.amount.toFixed(2)} USD</b> (${q} cuotas)\n` +
+        `🏦 Cuenta: ${u.payInfo}\n\n` +
+        `👉 Abre CrediCupo para aprobar y subir capture.`
+      );
+    };
+    wrappedReq._notifWrapped = true;
+    window.requestLoan = wrappedReq;
+  }
+
+  const origSubmitPay = window.submitInstallmentPayment;
+  if (origSubmitPay && !origSubmitPay._notifWrapped) {
+    const wrappedPay = async (loanId, instNum) => {
+      const refVal = (document.getElementById("payRefInput")?.value || "").trim();
+      await origSubmitPay(loanId, instNum);
+      if (!window.CC || !refVal) return;
+      const { state } = window.CC;
+      const l = state.loans[loanId];
+      if (!l) return;
+      await window.sendOwnerTelegramAlert(
+        `💰 <b>PAGO DE CUOTA REPORTADO</b>\n\n` +
+        `👤 Cliente: <b>${l.nombre}</b> (V-${l.cedula})\n` +
+        `📌 Cuota: <b>#${instNum}</b> por <b>$${Number(l.quotaAmount || l.totalDue).toFixed(2)} USD</b>\n` +
+        `🧾 Referencia: <b>${refVal}</b>\n\n` +
+        `👉 Entra a CrediCupo para verificar el capture y aprobar.`
+      );
+    };
+    wrappedPay._notifWrapped = true;
+    window.submitInstallmentPayment = wrappedPay;
+  }
+
+  // ------------------------------------------------------------
+  // E. CONFIGURACIÓN DEL DUEÑO (BVC, UBII Y TELEGRAM)
+  // ------------------------------------------------------------
+  function injectAdminExtraBoxes() {
+    const cfgPane = document.querySelector("#admPaneCfg .card");
+    if (!cfgPane) return;
+    const levelsTitle = cfgPane.querySelector("h3.card-title:nth-of-type(2)");
+
+    if (!document.getElementById("extraBanksAdminBox")) {
+      const extraBox = document.createElement("div");
+      extraBox.id = "extraBanksAdminBox";
+      extraBox.style.cssText = "background:#F0FFF8;border:1px solid #B7EB8F;border-radius:10px;padding:12px;margin-top:12px;";
+      extraBox.innerHTML = `
+        <strong style="font-size:13px;color:var(--primary);display:block;margin-bottom:6px;">
+          🏦 Tus Cuentas Adicionales (BVC 0104 y Ubii / UVP)
+        </strong>
+        <label style="margin-top:4px;">Banco Venezolano de Crédito (0104) • Pago Móvil</label>
+        <input type="text" id="cfgOwnerBvcPm" placeholder="BVC (0104) • V-12345678 • 0414-0000000">
+        <label>Banco Venezolano de Crédito • Correo</label>
+        <input type="email" id="cfgOwnerBvcMail" placeholder="tucorreo@gmail.com">
+        <label>Ubii Pagos (UVP) • Correo / Pago Móvil</label>
+        <input type="text" id="cfgOwnerUbii" placeholder="Correo Ubii: tucorreo@gmail.com • Tel: 0414-0000000">
+        <button type="button" class="btn btn-sm btn-primary" style="margin-top:10px;width:100%;" onclick="saveExtraAllCfg()">
+          Guardar Cuentas BVC y Ubii
+        </button>
+      `;
+      if (levelsTitle) cfgPane.insertBefore(extraBox, levelsTitle);
+      else cfgPane.appendChild(extraBox);
+    }
+
+    if (!document.getElementById("tgNotifAdminBox")) {
+      const tgBox = document.createElement("div");
+      tgBox.id = "tgNotifAdminBox";
+      tgBox.style.cssText = "background:#DEEBFF;border:1px solid #B3D4FF;border-radius:10px;padding:12px;margin-top:12px;";
+      tgBox.innerHTML = `
+        <strong style="font-size:13px;color:#0747A6;display:block;margin-bottom:6px;">
+          🔔 Notificaciones Directas a tu Telegram
+        </strong>
+        <label style="margin-top:4px;">Token de tu Bot (@BotFather)</label>
+        <input type="text" id="cfgTgToken" placeholder="7845123690:AAH...">
+        <label>Tu Chat ID de Telegram (@userinfobot)</label>
+        <input type="tel" id="cfgTgChatId" placeholder="Ej: 123456789">
+        <div class="grid-2" style="margin-top:8px;">
+          <button type="button" class="btn btn-sm btn-primary" onclick="saveExtraAllCfg()">Guardar Telegram</button>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="testTgNotif()">Probar Sonido/Msg</button>
+        </div>
+      `;
+      if (levelsTitle) cfgPane.insertBefore(tgBox, levelsTitle);
+      else cfgPane.appendChild(tgBox);
+    }
+  }
+
+  window.saveExtraAllCfg = async () => {
+    if (!window.CC) return;
+    const { db, state, showToast } = window.CC;
+    const ownerBvcPm = (document.getElementById("cfgOwnerBvcPm")?.value || "").trim();
+    const ownerBvcMail = (document.getElementById("cfgOwnerBvcMail")?.value || "").trim();
+    const ownerUbii = (document.getElementById("cfgOwnerUbii")?.value || "").trim();
+    const tgBotToken = (document.getElementById("cfgTgToken")?.value || "").trim();
+    const tgOwnerChatId = (document.getElementById("cfgTgChatId")?.value || "").trim();
+
+    await setDoc(doc(db, "credicupo", "config"), {
+      ...state.cfg,
+      ownerBvcPm,
+      ownerBvcMail,
+      ownerUbii,
+      tgBotToken,
+      tgOwnerChatId
+    });
+    showToast("✅ Ajustes de bancos y Telegram guardados");
+  };
+
+  window.testTgNotif = async () => {
+    playChime();
+    await window.sendOwnerTelegramAlert("🔔 <b>Prueba exitosa:</b> Así te avisará CrediCupo Express cuando te paguen o pidan un préstamo.");
+    if (window.CC) window.CC.showToast("🔔 Alerta de prueba enviada");
+  };
+
+  const origSaveAdmin = window.saveAdminConfig;
+  if (origSaveAdmin && !origSaveAdmin._extraWrapped) {
+    const wrappedSave = async () => {
+      await origSaveAdmin();
+      await window.saveExtraAllCfg();
+    };
+    wrappedSave._extraWrapped = true;
+    window.saveAdminConfig = wrappedSave;
+  }
+
+  // ------------------------------------------------------------
+  // F. EDITOR DE CUENTA DE COBRO DEL CLIENTE YA REGISTRADO
+  // ------------------------------------------------------------
   function injectClientPayEditor() {
     if (!window.CC || !window.CC.state) return;
     const { state } = window.CC;
@@ -160,11 +475,8 @@ import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase
       card.id = "cliEditPayMethodCard";
       card.className = "card";
       const histCard = document.getElementById("cliHistoryList")?.closest(".card");
-      if (histCard) {
-        viewClient.insertBefore(card, histCard);
-      } else {
-        viewClient.appendChild(card);
-      }
+      if (histCard) viewClient.insertBefore(card, histCard);
+      else viewClient.appendChild(card);
     }
 
     if (card.dataset.currentCedula === u.cedula && card.dataset.currentPay === u.payInfo) return;
@@ -282,7 +594,105 @@ import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase
     showToast("✅ Cuenta de cobro actualizada");
   };
 
-  const obs = new MutationObserver(() => injectClientPayEditor());
+  // ------------------------------------------------------------
+  // G. SINCRONIZACIÓN EN TIEMPO REAL DE VISTAS Y ALERTAS
+  // ------------------------------------------------------------
+  function syncAllExtraFeatures() {
+    if (!window.CC || !window.CC.state || !window.CC.state.loadedCfg) return;
+    const { state, showToast } = window.CC;
+    const c = state.cfg;
+
+    injectAdminExtraBoxes();
+    injectClientPayEditor();
+
+    // Rellenar inputs del panel de dueño
+    const mapInputs = [
+      ["cfgOwnerBvcPm", c.ownerBvcPm],
+      ["cfgOwnerBvcMail", c.ownerBvcMail],
+      ["cfgOwnerUbii", c.ownerUbii],
+      ["cfgTgToken", c.tgBotToken],
+      ["cfgTgChatId", c.tgOwnerChatId]
+    ];
+    mapInputs.forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el && document.activeElement !== el && !el.dataset.loaded) {
+        el.value = val || "";
+        el.dataset.loaded = "1";
+      }
+    });
+
+    // Mostrar cuentas BVC y Ubii en el cuadro de pago del cliente
+    const actBox = document.getElementById("cliActiveLoanBox");
+    if (actBox && !actBox.classList.contains("hidden")) {
+      const infoAlert = actBox.querySelector(".alert.alert-info");
+      if (infoAlert && !infoAlert.dataset.extraBanksAdded) {
+        let extraLines = "";
+        if (c.ownerBvcPm) extraLines += `<br>• BVC (0104) Pago Móvil: <strong>${c.ownerBvcPm}</strong>`;
+        if (c.ownerBvcMail) extraLines += `<br>• BVC Correo: <strong>${c.ownerBvcMail}</strong>`;
+        if (c.ownerUbii) extraLines += `<br>• Ubii Pagos (UVP): <strong>${c.ownerUbii}</strong>`;
+        if (extraLines) infoAlert.innerHTML += extraLines;
+        infoAlert.dataset.extraBanksAdded = "1";
+      }
+
+      // Botón para que el cliente vea el capture de desembolso del dueño
+      if (state.currentUserCedula) {
+        const myLoans = Object.values(state.loans)
+          .filter(l => l.cedula === state.currentUserCedula && ["activo", "pagando"].includes(l.status))
+          .sort((a, b) => b.createdAt - a.createdAt);
+        const activeLoan = myLoans[0];
+        if (activeLoan && activeLoan.disburseProof && !document.getElementById("cliDisbProofBtn")) {
+          const strip = actBox.querySelector(".summary-strip");
+          if (strip) {
+            const btnWrap = document.createElement("div");
+            btnWrap.id = "cliDisbProofBtn";
+            btnWrap.style.cssText = "margin-bottom:10px;";
+            btnWrap.innerHTML = `
+              <button type="button" class="btn btn-sm btn-secondary" style="width:100%;background:#E3FCEF;color:#006644;border:1px solid #B7EB8F;"
+                onclick="openPhoto('${activeLoan.disburseProof}', 'Comprobante de Desembolso • Ref: ${activeLoan.disburseRef || 'Pagado'}')">
+                🧾 Ver Capture de tu Préstamo Recibido ${activeLoan.disburseRef ? `(Ref: ${activeLoan.disburseRef})` : ''}
+              </button>
+            `;
+            strip.parentNode.insertBefore(btnWrap, strip.nextSibling);
+          }
+        }
+      }
+    }
+
+    // Botón en el panel del dueño para ver su capture de desembolso guardado
+    const admPane = document.getElementById("admPaneLoans");
+    if (admPane && !admPane.classList.contains("hidden")) {
+      admPane.querySelectorAll(".item-box").forEach(card => {
+        if (card.dataset.disbChecked) return;
+        card.dataset.disbChecked = "1";
+        const delBtn = card.querySelector("button[onclick^='askDeleteLoan']");
+        if (!delBtn) return;
+        const match = delBtn.getAttribute("onclick").match(/askDeleteLoan\('([^']+)'/);
+        if (!match) return;
+        const loan = state.loans[match[1]];
+        if (loan && loan.disburseProof) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "btn btn-sm btn-secondary";
+          btn.textContent = "Ver Mi Capture";
+          btn.onclick = () => window.openPhoto(loan.disburseProof, `Desembolso a ${loan.nombre} • Ref: ${loan.disburseRef || 'N/A'}`);
+          delBtn.parentNode.insertBefore(btn, delBtn);
+        }
+      });
+    }
+
+    // Alerta sonora en vivo si el dueño tiene abierto el panel
+    const loansArr = Object.values(state.loans || {});
+    const pendCount = loansArr.filter(l => l.status === "pendiente").length;
+    const revCount = loansArr.filter(l => l.status === "pagando").length;
+    const sig = `${pendCount}-${revCount}`;
+    if (knownSig !== null && sig !== knownSig && state.isAdmin) {
+      playChime();
+      showToast(`🔔 ¡Novedad! (${pendCount} por aprobar • ${revCount} pagos en revisión)`);
+    }
+    knownSig = sig;
+  }
+
+  const obs = new MutationObserver(() => syncAllExtraFeatures());
   obs.observe(document.body, { childList: true, subtree: true });
-  setInterval(injectClientPayEditor, 1200);
+  setInterval(syncAllExtraFeatures, 1200);
 })();
