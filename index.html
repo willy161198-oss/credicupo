@@ -418,9 +418,21 @@
   </div>
 </div>
 
+<!-- MODAL CONFIRMACIÓN SEGURA CON PIN DE DUEÑO -->
+<div id="secureActionModal" class="modal-bg hidden" onclick="closeSecureModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 class="card-title" id="secModalTitle">Confirmar Acción</h3>
+    <div id="secModalDesc" class="alert alert-warn" style="font-size:13px;"></div>
+    <label>Escribe tu Código Maestro de Dueño para confirmar</label>
+    <input type="password" id="secPinInput" inputmode="numeric" placeholder="****">
+    <button class="btn btn-primary" id="secConfirmBtn" onclick="executeSecureAction()">Confirmar y Ejecutar</button>
+    <button class="btn btn-secondary" onclick="closeSecureModal()">Cancelar</button>
+  </div>
+</div>
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyD-014xZkByqWrP0vyPRx5pLsVJMWFURfg",
@@ -483,6 +495,7 @@
   };
 
   let tempPhotos = {};
+  let pendingSecureAction = null;
 
   function showToast(msg) {
     const t = document.getElementById("toast");
@@ -495,6 +508,76 @@
   function setOnlineStatus(ok) {
     document.getElementById("syncDot").style.background = ok ? "#57D9A3" : "#FF5630";
     document.getElementById("syncText").textContent = ok ? "En vivo • Sincronizado" : "Sin conexión a nube";
+  }
+
+  // CANDADO DE SEGURIDAD CON CÓDIGO DE DUEÑO
+  window.requestSecureAction = (type, payload, title, descHtml, isDanger = false) => {
+    pendingSecureAction = { type, payload };
+    document.getElementById("secModalTitle").textContent = title;
+    const descEl = document.getElementById("secModalDesc");
+    descEl.innerHTML = descHtml;
+    descEl.className = isDanger ? "alert alert-danger" : "alert alert-warn";
+    const btn = document.getElementById("secConfirmBtn");
+    btn.className = isDanger ? "btn btn-danger" : "btn btn-primary";
+    btn.textContent = isDanger ? "Confirmar Eliminación" : "Confirmar y Ejecutar";
+    document.getElementById("secPinInput").value = "";
+    document.getElementById("secureActionModal").classList.remove("hidden");
+    setTimeout(() => document.getElementById("secPinInput").focus(), 120);
+  };
+
+  window.closeSecureModal = () => {
+    pendingSecureAction = null;
+    document.getElementById("secureActionModal").classList.add("hidden");
+  };
+
+  window.executeSecureAction = async () => {
+    const pin = document.getElementById("secPinInput").value.trim();
+    if (pin !== String(state.cfg.adminPin)) {
+      return showToast("⛔ Código Maestro incorrecto");
+    }
+    if (!pendingSecureAction) return;
+    const { type, payload } = pendingSecureAction;
+    closeSecureModal();
+
+    if (type === "approveLoan") {
+      await runApproveLoan(payload.id);
+    } else if (type === "rejectLoan") {
+      await runRejectLoan(payload.id);
+    } else if (type === "confirmInstallment") {
+      await runConfirmInstallment(payload.id, payload.instNum);
+    } else if (type === "deleteLoan") {
+      await deleteDoc(doc(db, "loans", payload.id));
+      showToast("🗑️ Préstamo eliminado");
+    } else if (type === "deleteUser") {
+      await deleteDoc(doc(db, "users", payload.cedula));
+      showToast("🗑️ Cliente eliminado");
+    }
+  };
+
+  // NORMALIZA PRÉSTAMOS ANTERIORES SIN SCHEDULE
+  function getNormalizedSchedule(loan) {
+    if (Array.isArray(loan.schedule) && loan.schedule.length > 0) {
+      return loan.schedule;
+    }
+    const qCount = Number(loan.quotas) || 1;
+    const tot = Number(loan.totalDue) || Number(loan.amount) || 0;
+    const baseTime = Number(loan.approvedAt || loan.createdAt || Date.now());
+    const due = Number(loan.dueDate || (baseTime + 7 * 86400000));
+    const st = loan.status === "pagado" ? "pagado" : (loan.status === "pagando" ? "revision" : "pendiente");
+    const qAmt = Number((tot / qCount).toFixed(2));
+    const arr = [];
+    for (let i = 1; i <= qCount; i++) {
+      arr.push({
+        num: i,
+        amount: qAmt,
+        dueDate: i === 1 ? due : (baseTime + i * 7 * 86400000),
+        status: st,
+        payRef: loan.payRef || "",
+        payProof: loan.payProof || "",
+        confirmedAt: loan.paidAt || null
+      });
+    }
+    return arr;
   }
 
   // CONSULTAR TASA BCV AUTOMÁTICA
@@ -835,10 +918,11 @@
           <div style="text-align:center;padding:8px 0;">
             <div style="font-size:34px;">⏳</div>
             <h3 style="margin:6px 0;">Solicitud en Revisión</h3>
-            <p style="font-size:13px;color:var(--muted);">Pediste <strong>$${openLoan.amount.toFixed(2)} USD</strong> en <strong>${openLoan.quotas} cuotas ${openLoan.freq}es</strong>.<br>En breve te transferimos a:<br><strong>${openLoan.payInfo}</strong></p>
+            <p style="font-size:13px;color:var(--muted);">Pediste <strong>$${openLoan.amount.toFixed(2)} USD</strong> en <strong>${openLoan.quotas || 1} cuotas ${openLoan.freq || 'semanal'}es</strong>.<br>En breve te transferimos a:<br><strong>${openLoan.payInfo}</strong></p>
           </div>`;
       } else {
-        const schedule = openLoan.schedule || [];
+        const schedule = getNormalizedSchedule(openLoan);
+        const totalQuotas = schedule.length;
         const nextInst = schedule.find(s => s.status === "pendiente" || s.status === "revision");
         const isLate = nextInst && nextInst.status === "pendiente" && Date.now() > nextInst.dueDate;
         const paidCountInst = schedule.filter(s => s.status === "pagado").length;
@@ -847,7 +931,7 @@
 
         const scheduleHtml = schedule.map(s => {
           const isNext = nextInst && s.num === nextInst.num;
-          const bVal = (s.amount * rate).toFixed(2);
+          const bVal = (Number(s.amount) * rate).toFixed(2);
           const badge = s.status === "pagado"
             ? `<span class="pill pill-pag">PAGADA</span>`
             : s.status === "revision"
@@ -863,8 +947,8 @@
           return `
             <div class="inst-item ${isNext ? 'next-due' : s.status === 'pagado' ? 'paid-row' : ''}">
               <div>
-                <strong>Cuota ${s.num} de ${openLoan.quotas}</strong> • Vence: ${new Date(s.dueDate).toLocaleDateString()}<br>
-                <span style="color:var(--primary);font-weight:700;">$${s.amount.toFixed(2)} (Bs. ${bVal})</span>
+                <strong>Cuota ${s.num} de ${totalQuotas}</strong> • Vence: ${new Date(s.dueDate).toLocaleDateString()}<br>
+                <span style="color:var(--primary);font-weight:700;">$${Number(s.amount).toFixed(2)} (Bs. ${bVal})</span>
                 ${extraLine}
               </div>
               <div>${badge}</div>
@@ -878,11 +962,11 @@
               🧾 <strong>Cuota ${nextInst.num} en verificación:</strong> Recibimos tu comprobante (Ref: <strong>${nextInst.payRef}</strong>). Apenas lo confirmemos se actualiza tu plan.
             </div>`;
         } else if (nextInst) {
-          const qBs = (nextInst.amount * rate).toFixed(2);
-          const waMsg = encodeURIComponent(`Hola, soy ${u.nombre} (C.I. ${u.cedula}). Reporto el pago de mi Cuota ${nextInst.num}/${openLoan.quotas} por $${nextInst.amount.toFixed(2)} (Bs. ${qBs}) en ${state.cfg.appName}.`);
+          const qBs = (Number(nextInst.amount) * rate).toFixed(2);
+          const waMsg = encodeURIComponent(`Hola, soy ${u.nombre} (C.I. ${u.cedula}). Reporto el pago de mi Cuota ${nextInst.num}/${totalQuotas} por $${Number(nextInst.amount).toFixed(2)} (Bs. ${qBs}) en ${state.cfg.appName}.`);
           payFormHtml = `
             <div class="alert alert-info" style="font-size:12px;margin-top:10px;">
-              <strong>Paga tu Cuota ${nextInst.num} ($${nextInst.amount.toFixed(2)} / Bs. ${qBs}) aquí:</strong><br>
+              <strong>Paga tu Cuota ${nextInst.num} ($${Number(nextInst.amount).toFixed(2)} / Bs. ${qBs}) aquí:</strong><br>
               • Pago Móvil: ${state.cfg.ownerPm}<br>
               • Binance Pay: ${state.cfg.ownerBin}
             </div>
@@ -898,7 +982,7 @@
 
         actBox.innerHTML = `
           <h3 class="card-title">
-            <span>Tus Cuotas (${paidCountInst}/${openLoan.quotas} pagadas)</span>
+            <span>Tus Cuotas (${paidCountInst}/${totalQuotas} pagadas)</span>
             ${isLate ? '<span class="pill pill-mor">CUOTA VENCIDA</span>' : '<span class="pill pill-act">AL DÍA</span>'}
           </h3>
           <div class="summary-strip">
@@ -980,20 +1064,21 @@
     if (!ref) return showToast("Escribe el número de referencia");
     if (!proof) return showToast("Sube la foto del comprobante");
     const loan = state.loans[loanId];
-    const newSchedule = (loan.schedule || []).map(s => {
+    const baseSchedule = getNormalizedSchedule(loan);
+    const newSchedule = baseSchedule.map(s => {
       if (s.num === instNum) {
         return { ...s, status: "revision", payRef: ref, payProof: proof, sentAt: Date.now() };
       }
       return s;
     });
     await setDoc(doc(db, "loans", loanId), {
-      ...loan, status: "pagando", schedule: newSchedule
+      ...loan, quotas: baseSchedule.length, status: "pagando", schedule: newSchedule
     });
     delete tempPhotos["payProofPreview"];
     showToast(`Comprobante de Cuota ${instNum} enviado`);
   };
 
-  // PANEL ADMIN CON DESGLOSE DE TODAS LAS CUOTAS EN CURSO
+  // PANEL ADMIN CON DESGLOSE, ELIMINAR Y CANDADO DE CÓDIGO MAESTRO
   window.switchAdminTab = (tab) => {
     document.getElementById("admTabLoans").classList.toggle("active", tab === "loans");
     document.getElementById("admTabUsers").classList.toggle("active", tab === "users");
@@ -1022,7 +1107,8 @@
     let enCalle = 0, ganancia = 0;
     allLoans.forEach(l => {
       if (l.status === "activo" || l.status === "pagando") {
-        const paidInsts = (l.schedule || []).filter(s => s.status === "pagado").reduce((acc, x) => acc + Number(x.amount), 0);
+        const sch = getNormalizedSchedule(l);
+        const paidInsts = sch.filter(s => s.status === "pagado").reduce((acc, x) => acc + Number(x.amount), 0);
         enCalle += Math.max(0, Number(l.amount) - paidInsts);
       }
       if (l.status === "pagado") ganancia += (Number(l.totalDue) - Number(l.amount));
@@ -1044,7 +1130,8 @@
     } else {
       lWrap.innerHTML = visibleLoans.map(l => {
         const rate = Number(state.cfg.rate) || 1;
-        const sch = l.schedule || [];
+        const sch = l.status === "pendiente" ? [] : getNormalizedSchedule(l);
+        const totalQuotas = sch.length || Number(l.quotas) || 1;
         const revInst = sch.find(s => s.status === "revision");
         const nextPend = sch.find(s => s.status === "pendiente");
         const paidCnt = sch.filter(s => s.status === "pagado").length;
@@ -1052,19 +1139,21 @@
         const remUsd = Math.max(0, Number(l.totalDue) - paidUsd);
         const isLate = nextPend && Date.now() > nextPend.dueDate && (l.status === "activo" || l.status === "pagando");
         const isExpanded = state.expandedLoans[l.id] !== undefined ? state.expandedLoans[l.id] : (l.status === "activo" || l.status === "pagando");
+        const safeName = l.nombre.replace(/'/g, "");
 
         let actions = "";
         if (l.status === "pendiente") {
           actions = `
-            <button class="btn btn-sm btn-primary" onclick="approveLoan('${l.id}')">Aprobar (${l.quotas} cuotas)</button>
-            <button class="btn btn-sm btn-danger" onclick="rejectLoan('${l.id}')">Rechazar</button>
+            <button class="btn btn-sm btn-primary" onclick="askApproveLoan('${l.id}')">Aprobar (${l.quotas || 2} cuotas)</button>
+            <button class="btn btn-sm btn-warn" onclick="askRejectLoan('${l.id}')">Rechazar</button>
           `;
         } else if (revInst) {
           actions = `
             <button class="btn btn-sm btn-secondary" onclick="openPhoto('${revInst.payProof}', 'Cuota ${revInst.num} • Ref: ${revInst.payRef}')">Ver Comprobante C${revInst.num}</button>
-            <button class="btn btn-sm btn-primary" onclick="confirmInstallment('${l.id}', ${revInst.num})">Aprobar Cuota ${revInst.num}</button>
+            <button class="btn btn-sm btn-primary" onclick="askConfirmInstallment('${l.id}', ${revInst.num})">Aprobar Cuota ${revInst.num}</button>
           `;
         }
+        actions += `<button class="btn btn-sm btn-danger" onclick="askDeleteLoan('${l.id}', '${safeName}', ${l.amount})">Eliminar</button>`;
 
         let scheduleDetailHtml = "";
         if (sch.length > 0) {
@@ -1083,16 +1172,16 @@
             if (s.status === "revision") {
               rowBtn = `
                 <button class="btn btn-sm btn-secondary" style="padding:4px 7px;font-size:11px;" onclick="openPhoto('${s.payProof}', 'Cuota ${s.num} • Ref: ${s.payRef}')">Foto</button>
-                <button class="btn btn-sm btn-primary" style="padding:4px 7px;font-size:11px;" onclick="confirmInstallment('${l.id}', ${s.num})">OK</button>
+                <button class="btn btn-sm btn-primary" style="padding:4px 7px;font-size:11px;" onclick="askConfirmInstallment('${l.id}', ${s.num})">OK</button>
               `;
             } else if (s.status === "pendiente") {
-              rowBtn = `<button class="btn btn-sm btn-warn" style="padding:4px 7px;font-size:11px;" onclick="confirmInstallment('${l.id}', ${s.num})">Cobrar</button>`;
+              rowBtn = `<button class="btn btn-sm btn-warn" style="padding:4px 7px;font-size:11px;" onclick="askConfirmInstallment('${l.id}', ${s.num})">Cobrar</button>`;
             }
 
             return `
               <div class="inst-item" style="padding:7px 8px;margin-bottom:5px;">
                 <div style="line-height:1.35;">
-                  <strong>C${s.num}/${l.quotas}</strong> • $${Number(s.amount).toFixed(2)} (Bs. ${bVal})<br>
+                  <strong>C${s.num}/${totalQuotas}</strong> • $${Number(s.amount).toFixed(2)} (Bs. ${bVal})<br>
                   <span style="font-size:11px;color:var(--muted);">Vence: ${new Date(s.dueDate).toLocaleDateString()}${s.payRef ? ` • Ref: ${s.payRef}` : ''}</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:4px;">
@@ -1130,7 +1219,7 @@
             <div style="font-size:12px;margin:6px 0;line-height:1.5;">
               Nivel: <strong>${lvlTag}</strong> • Tel: <a href="https://wa.me/58${l.phone.replace(/^0/,'')}" target="_blank" style="color:var(--primary);font-weight:700;">${l.phone}</a><br>
               Prestar: <strong>$${l.amount.toFixed(2)} (Bs. ${(l.amount * rate).toFixed(2)})</strong> • Total: <strong>$${l.totalDue.toFixed(2)}</strong><br>
-              Plan: <strong>${l.quotas || 1} cuotas ${l.freq || 'semanal'}es</strong> de <strong>$${(l.quotaAmount || l.totalDue).toFixed(2)}</strong> (${paidCnt}/${l.quotas || 1} pagadas)<br>
+              Plan: <strong>${totalQuotas} cuotas ${l.freq || 'semanal'}es</strong> de <strong>$${(l.quotaAmount || l.totalDue).toFixed(2)}</strong> (${paidCnt}/${totalQuotas} pagadas)<br>
               Cuenta: <strong>${l.payInfo}</strong>
               ${revInst ? `<br>Pago reportado Cuota ${revInst.num} • Ref: <strong>${revInst.payRef}</strong>` : ""}
             </div>
@@ -1153,6 +1242,7 @@
     }
     uWrap.innerHTML = list.map(u => {
       const r = getLevelRule(u.level);
+      const safeName = u.nombre.replace(/'/g, "");
       return `
         <div class="item-box">
           <div class="row">
@@ -1163,18 +1253,80 @@
             Tel: ${u.phone} • Préstamos pagados: ${u.paidCount} • PIN: ${u.pin}<br>${u.payInfo}
           </div>
           <div class="row" style="justify-content:flex-start;flex-wrap:wrap;">
-            <button class="btn btn-sm btn-secondary" onclick="openPhoto('${u.idPhoto}', 'Cédula de ${u.nombre}')">Ver Cédula</button>
+            <button class="btn btn-sm btn-secondary" onclick="openPhoto('${u.idPhoto}', 'Cédula de ${safeName}')">Ver Cédula</button>
             <button class="btn btn-sm btn-primary" onclick="changeUserLvl('${u.cedula}', 1)">+ Nivel</button>
             <button class="btn btn-sm btn-secondary" onclick="changeUserLvl('${u.cedula}', -1)">- Nivel</button>
-            <button class="btn btn-sm ${u.blocked ? 'btn-primary' : 'btn-danger'}" onclick="toggleBlockUser('${u.cedula}')">${u.blocked ? 'Desbloquear' : 'Bloquear'}</button>
+            <button class="btn btn-sm ${u.blocked ? 'btn-primary' : 'btn-warn'}" onclick="toggleBlockUser('${u.cedula}')">${u.blocked ? 'Desbloquear' : 'Bloquear'}</button>
+            <button class="btn btn-sm btn-danger" onclick="askDeleteUser('${u.cedula}', '${safeName}')">Eliminar</button>
           </div>
         </div>
       `;
     }).join("");
   };
 
-  window.approveLoan = async (id) => {
+  // DISPARADORES CON CANDADO DE CÓDIGO MAESTRO
+  window.askApproveLoan = (id) => {
     const l = state.loans[id];
+    if (!l) return;
+    requestSecureAction(
+      "approveLoan",
+      { id },
+      "Aprobar Préstamo",
+      `Vas a aprobar y activar un préstamo de <strong>$${Number(l.amount).toFixed(2)} USD</strong> para <strong>${l.nombre}</strong> (V-${l.cedula}) en <strong>${l.quotas || 2} cuotas</strong>.`,
+      false
+    );
+  };
+
+  window.askRejectLoan = (id) => {
+    const l = state.loans[id];
+    if (!l) return;
+    requestSecureAction(
+      "rejectLoan",
+      { id },
+      "Rechazar Solicitud",
+      `Vas a rechazar la solicitud de <strong>$${Number(l.amount).toFixed(2)} USD</strong> de <strong>${l.nombre}</strong>.`,
+      true
+    );
+  };
+
+  window.askConfirmInstallment = (id, instNum) => {
+    const l = state.loans[id];
+    if (!l) return;
+    const sch = getNormalizedSchedule(l);
+    const inst = sch.find(s => s.num === instNum) || { amount: l.quotaAmount || l.totalDue };
+    requestSecureAction(
+      "confirmInstallment",
+      { id, instNum },
+      `Confirmar Pago Cuota ${instNum}`,
+      `Confirmas que ya recibiste en tu cuenta <strong>$${Number(inst.amount).toFixed(2)} USD</strong> de la <strong>Cuota ${instNum}/${sch.length}</strong> de <strong>${l.nombre}</strong>${inst.payRef ? ` (Ref: <strong>${inst.payRef}</strong>)` : ""}.`,
+      false
+    );
+  };
+
+  window.askDeleteLoan = (id, nombre, amount) => {
+    requestSecureAction(
+      "deleteLoan",
+      { id },
+      "Eliminar Préstamo",
+      `⚠️ Vas a eliminar permanentemente el préstamo de <strong>$${Number(amount).toFixed(2)} USD</strong> de <strong>${nombre}</strong>. Esta acción no se puede deshacer.`,
+      true
+    );
+  };
+
+  window.askDeleteUser = (cedula, nombre) => {
+    requestSecureAction(
+      "deleteUser",
+      { cedula },
+      "Eliminar Cliente",
+      `⚠️ Vas a eliminar permanentemente la cuenta de <strong>${nombre}</strong> (V-${cedula}). Esta acción no se puede deshacer.`,
+      true
+    );
+  };
+
+  // EJECUTORES REALES TRAS VALIDAR EL PIN
+  async function runApproveLoan(id) {
+    const l = state.loans[id];
+    if (!l) return;
     const quotas = Number(l.quotas) || 2;
     const stepDays = l.freq === "quincenal" ? 15 : 7;
     const qAmt = Number((Number(l.totalDue) / quotas).toFixed(2));
@@ -1189,19 +1341,22 @@
       });
     }
     state.expandedLoans[id] = true;
-    await setDoc(doc(db, "loans", id), { ...l, status: "activo", approvedAt: now, schedule });
-    showToast(`Préstamo activado en ${quotas} cuotas`);
-  };
+    await setDoc(doc(db, "loans", id), { ...l, quotas, status: "activo", approvedAt: now, schedule });
+    showToast(`✅ Préstamo activado en ${quotas} cuotas`);
+  }
 
-  window.rejectLoan = async (id) => {
+  async function runRejectLoan(id) {
     const l = state.loans[id];
+    if (!l) return;
     await setDoc(doc(db, "loans", id), { ...l, status: "rechazado" });
     showToast("Solicitud rechazada");
-  };
+  }
 
-  window.confirmInstallment = async (id, instNum) => {
+  async function runConfirmInstallment(id, instNum) {
     const l = state.loans[id];
-    const newSchedule = (l.schedule || []).map(s => {
+    if (!l) return;
+    const baseSchedule = getNormalizedSchedule(l);
+    const newSchedule = baseSchedule.map(s => {
       if (s.num === instNum) return { ...s, status: "pagado", confirmedAt: Date.now() };
       return s;
     });
@@ -1210,6 +1365,7 @@
 
     await setDoc(doc(db, "loans", id), {
       ...l,
+      quotas: baseSchedule.length,
       status: nextStatus,
       schedule: newSchedule,
       paidAt: allPaid ? Date.now() : null
@@ -1224,11 +1380,11 @@
         const newLvl = Math.max(u.level || 1, calcLvl);
         await setDoc(doc(db, "users", u.cedula), { ...u, paidCount: newPaid, level: newLvl });
       }
-      showToast("¡Préstamo completado y cupo liberado!");
+      showToast("✅ ¡Préstamo completado y cupo liberado!");
     } else {
-      showToast(`¡Cuota ${instNum} confirmada!`);
+      showToast(`✅ ¡Cuota ${instNum} confirmada!`);
     }
-  };
+  }
 
   window.changeUserLvl = async (ced, delta) => {
     const u = state.users[ced];
