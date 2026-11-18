@@ -1223,3 +1223,242 @@ import { doc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12
   obs.observe(document.body, { childList: true, subtree: true });
   setInterval(syncAllExtraFeatures, 1200);
 })();
+// ============================================================
+// MÓDULO EXTRA 4: CRÉDITO ADICIONAL (MISMO NIVEL O INFERIOR)
+// ============================================================
+import { doc as docMulti, setDoc as setDocMulti } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+(function iniciarCreditoAdicional() {
+  let selectedActiveLoanId = null;
+
+  function getAvailableLevelsUpTo(maxLevel) {
+    if (!window.CC || !window.CC.state) return [];
+    const levels = Array.isArray(window.CC.state.cfg?.levels) ? window.CC.state.cfg.levels : [];
+    const result = [];
+    for (let lvl = 1; lvl <= maxLevel; lvl++) {
+      const rule = window.CC.getLevelRule ? window.CC.getLevelRule(lvl) : levels[lvl - 1];
+      if (rule) {
+        result.push({
+          level: lvl,
+          name: rule.name || `Nivel ${lvl}`,
+          amount: Number(rule.amount) || 0,
+          interest: Number(rule.interest) || 0,
+          quotas: Number(rule.quotas) || 1,
+          freq: rule.freq || "semanal"
+        });
+      }
+    }
+    return result;
+  }
+
+  window.updateExtraLoanCalc = () => {
+    if (!window.CC || !window.CC.state) return;
+    const { state } = window.CC;
+    const u = state.users[state.currentUserCedula];
+    if (!u) return;
+
+    const lvlSel = document.getElementById("extraLoanLevelSel");
+    const qSel = document.getElementById("extraLoanQuotaSel");
+    const prevBox = document.getElementById("extraLoanPreview");
+    if (!lvlSel || !qSel || !prevBox) return;
+
+    const chosenLvl = Number(lvlSel.value) || 1;
+    const avail = getAvailableLevelsUpTo(Number(u.level) || 1);
+    const rule = avail.find(r => r.level === chosenLvl) || avail[0];
+    if (!rule) return;
+
+    if (qSel.dataset.forLevel !== String(chosenLvl)) {
+      qSel.dataset.forLevel = String(chosenLvl);
+      qSel.innerHTML = "";
+      for (let q = 1; q <= rule.quotas; q++) {
+        const opt = document.createElement("option");
+        opt.value = String(q);
+        opt.textContent = `${q} cuota${q > 1 ? "s" : ""} (${rule.freq})`;
+        if (q === rule.quotas) opt.selected = true;
+        qSel.appendChild(opt);
+      }
+    }
+
+    const quotas = Number(qSel.value) || rule.quotas;
+    const totalDue = Number((rule.amount * (1 + rule.interest / 100)).toFixed(2));
+    const perQuota = Number((totalDue / quotas).toFixed(2));
+    const rate = Number(state.cfg.rate) || 1;
+    const bsAmt = (rule.amount * rate).toFixed(2);
+
+    prevBox.innerHTML = `
+      Recibes: <strong>$${rule.amount.toFixed(2)} USD (Bs. ${bsAmt})</strong><br>
+      Total a pagar (${rule.interest}% interés): <strong>$${totalDue.toFixed(2)} USD</strong> en <strong>${quotas} cuota(s) de $${perQuota.toFixed(2)}</strong>
+    `;
+  };
+
+  window.submitExtraParallelLoan = async () => {
+    if (!window.CC || !window.CC.state) return;
+    const { db, state, showToast } = window.CC;
+    const u = state.users[state.currentUserCedula];
+    if (!u) return;
+    if (u.blocked) return showToast("⛔ Tu cuenta está bloqueada");
+
+    const myLoans = Object.values(state.loans || {}).filter(l => l.cedula === u.cedula);
+    if (myLoans.some(l => l.status === "pendiente")) {
+      return showToast("⏳ Ya tienes una solicitud pendiente por aprobar");
+    }
+
+    const lvlSel = document.getElementById("extraLoanLevelSel");
+    const qSel = document.getElementById("extraLoanQuotaSel");
+    const chosenLvl = Number(lvlSel?.value || 1);
+    const maxLvl = Number(u.level) || 1;
+    if (chosenLvl < 1 || chosenLvl > maxLvl) {
+      return showToast("Nivel no permitido para tu cuenta");
+    }
+
+    const avail = getAvailableLevelsUpTo(maxLvl);
+    const rule = avail.find(r => r.level === chosenLvl);
+    if (!rule) return;
+
+    const quotas = Math.min(rule.quotas, Math.max(1, Number(qSel?.value || rule.quotas)));
+    const totalDue = Number((rule.amount * (1 + rule.interest / 100)).toFixed(2));
+    const quotaAmount = Number((totalDue / quotas).toFixed(2));
+    const loanId = "LN_" + Date.now();
+
+    const loanObj = {
+      id: loanId,
+      cedula: u.cedula,
+      nombre: u.nombre,
+      phone: u.phone,
+      payInfo: u.payInfo,
+      level: chosenLvl,
+      levelName: rule.name,
+      amount: rule.amount,
+      interest: rule.interest,
+      totalDue,
+      quotas,
+      quotaAmount,
+      freq: rule.freq,
+      isAdditional: true,
+      status: "pendiente",
+      createdAt: Date.now()
+    };
+
+    await setDocMulti(docMulti(db, "loans", loanId), loanObj);
+
+    if (window.sendOwnerTelegramAlert) {
+      const title = `Crédito Adicional Solicitado ➕💸`;
+      const body = `${u.nombre} (V-${u.cedula}) ya tiene un préstamo activo y pidió otro de Nivel ${chosenLvl} (${rule.name}) por $${rule.amount.toFixed(2)} USD en ${quotas} cuota(s).`;
+      await window.sendOwnerTelegramAlert(`<b>${title}</b>\n${body}`, title, body);
+    }
+
+    showToast("✅ Solicitud de crédito adicional enviada");
+  };
+
+  function syncAdditionalLoanUI() {
+    if (!window.CC || !window.CC.state || !window.CC.state.loadedCfg) return;
+    const { state } = window.CC;
+    const viewClient = document.getElementById("viewClient");
+    const actBox = document.getElementById("cliActiveLoanBox");
+    if (!viewClient || viewClient.classList.contains("hidden") || !actBox) return;
+
+    const u = state.users[state.currentUserCedula];
+    if (!u) return;
+
+    const myLoans = Object.values(state.loans || {}).filter(l => l.cedula === u.cedula);
+    const activeLoans = myLoans
+      .filter(l => ["activo", "pagando"].includes(l.status))
+      .sort((a, b) => a.createdAt - b.createdAt);
+    const hasPending = myLoans.some(l => l.status === "pendiente");
+
+    let switcher = document.getElementById("multiLoanSwitcher");
+    if (activeLoans.length > 1) {
+      if (!selectedActiveLoanId || !activeLoans.some(l => l.id === selectedActiveLoanId)) {
+        selectedActiveLoanId = activeLoans[0].id;
+      }
+      if (!switcher) {
+        switcher = document.createElement("div");
+        switcher.id = "multiLoanSwitcher";
+        switcher.style.cssText = "display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;";
+        actBox.insertBefore(switcher, actBox.firstChild);
+      }
+      const swSig = activeLoans.map(l => `${l.id}-${l.id === selectedActiveLoanId ? 1 : 0}`).join("|");
+      if (switcher.dataset.sig !== swSig) {
+        switcher.dataset.sig = swSig;
+        switcher.innerHTML = activeLoans.map((l, i) => `
+          <button type="button" class="btn btn-sm ${l.id === selectedActiveLoanId ? "btn-primary" : "btn-secondary"}"
+            style="margin-top:0;flex:1;"
+            onclick="window._selectClientLoan('${l.id}')">
+            Crédito #${i + 1} ($${Number(l.amount).toFixed(2)})
+          </button>
+        `).join("");
+      }
+    } else if (switcher) {
+      switcher.remove();
+    }
+
+    let addCard = document.getElementById("cliExtraParallelCard");
+    if (activeLoans.length >= 1 && !u.blocked) {
+      if (!addCard) {
+        addCard = document.createElement("div");
+        addCard.id = "cliExtraParallelCard";
+        addCard.className = "card";
+        const payCard = document.getElementById("cliEditPayMethodCard");
+        const histCard = document.getElementById("cliHistoryList")?.closest(".card");
+        const refNode = payCard || histCard;
+        if (refNode) viewClient.insertBefore(addCard, refNode);
+        else viewClient.appendChild(addCard);
+      }
+
+      const cardSig = `${u.cedula}-${u.level}-${hasPending ? 1 : 0}-${activeLoans.length}`;
+      if (addCard.dataset.sig !== cardSig) {
+        addCard.dataset.sig = cardSig;
+        if (hasPending) {
+          addCard.innerHTML = `
+            <div class="card-title" style="margin-bottom:4px;">
+              <span>➕ Crédito Adicional</span>
+              <span class="badge b-warn">EN REVISIÓN</span>
+            </div>
+            <div class="alert alert-warn" style="margin-bottom:0;font-size:12px;">
+              ⏳ Ya tienes una solicitud adicional pendiente por aprobación del dueño.
+            </div>
+          `;
+        } else {
+          const avail = getAvailableLevelsUpTo(Number(u.level) || 1);
+          const optionsHtml = avail.slice().reverse().map(r =>
+            `<option value="${r.level}">Nivel ${r.level} • ${r.name} ($${r.amount.toFixed(2)} USD)</option>`
+          ).join("");
+
+          addCard.innerHTML = `
+            <div class="card-title" style="margin-bottom:6px;">
+              <span>➕ Pedir Otro Crédito Activo</span>
+              <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('extraParallelForm').classList.toggle('hidden');updateExtraLoanCalc();">
+                Solicitar
+              </button>
+            </div>
+            <div style="font-size:12px;color:var(--muted);">
+              Puedes solicitar un crédito adicional en tu nivel actual (<strong>Nivel ${u.level}</strong>) o en un nivel inferior.
+            </div>
+            <div id="extraParallelForm" class="hidden" style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px;">
+              <label style="margin-top:0;">Elige el nivel del crédito adicional</label>
+              <select id="extraLoanLevelSel" onchange="updateExtraLoanCalc()">
+                ${optionsHtml}
+              </select>
+              <label>Cantidad de cuotas</label>
+              <select id="extraLoanQuotaSel" onchange="updateExtraLoanCalc()"></select>
+              <div id="extraLoanPreview" class="alert alert-info" style="margin-top:8px;margin-bottom:8px;font-size:12px;"></div>
+              <button type="button" class="btn btn-primary" onclick="submitExtraParallelLoan()">
+                Enviar Solicitud de Crédito Adicional
+              </button>
+            </div>
+          `;
+          setTimeout(() => window.updateExtraLoanCalc(), 50);
+        }
+      }
+    } else if (addCard) {
+      addCard.remove();
+    }
+  }
+
+  window._selectClientLoan = (id) => {
+    selectedActiveLoanId = id;
+    if (window.CC && window.CC.refreshUI) window.CC.refreshUI();
+  };
+
+  setInterval(syncAdditionalLoanUI, 1200);
+})();
