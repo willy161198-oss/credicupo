@@ -1462,3 +1462,102 @@ import { doc as docMulti, setDoc as setDocMulti } from "https://www.gstatic.com/
 
   setInterval(syncAdditionalLoanUI, 1200);
 })();
+// ============================================================
+// AJUSTE FINAL: INTERÉS REAL (22%) Y LÍMITE DE 1 CRÉDITO EXTRA
+// ============================================================
+(function fijarInteresYLimiteAdicional() {
+  function obtenerReglaReal(lvl) {
+    if (!window.CC || !window.CC.state) return null;
+    const cfg = window.CC.state.cfg || {};
+    const levels = Array.isArray(cfg.levels) ? cfg.levels : [];
+    const r = window.CC.getLevelRule ? window.CC.getLevelRule(lvl) : levels[lvl - 1];
+    if (!r) return null;
+    const pctReal = Number(r.pct ?? r.interest ?? r.rate ?? r.int ?? r.porcentaje ?? 22);
+    return {
+      level: lvl,
+      name: r.name || `Nivel ${lvl}`,
+      amount: Number(r.amount) || 0,
+      interest: pctReal,
+      quotas: Number(r.quotas) || 1,
+      freq: r.freq || "semanal"
+    };
+  }
+
+  window.updateExtraLoanCalc = () => {
+    if (!window.CC || !window.CC.state) return;
+    const { state } = window.CC;
+    const u = state.users[state.currentUserCedula];
+    if (!u) return;
+
+    const lvlSel = document.getElementById("extraLoanLevelSel");
+    const qSel = document.getElementById("extraLoanQuotaSel");
+    const prevBox = document.getElementById("extraLoanPreview");
+    if (!lvlSel || !qSel || !prevBox) return;
+
+    const chosenLvl = Number(lvlSel.value) || 1;
+    const rule = obtenerReglaReal(chosenLvl);
+    if (!rule) return;
+
+    if (qSel.dataset.forLevel !== String(chosenLvl)) {
+      qSel.dataset.forLevel = String(chosenLvl);
+      qSel.innerHTML = "";
+      for (let q = 1; q <= rule.quotas; q++) {
+        const opt = document.createElement("option");
+        opt.value = String(q);
+        opt.textContent = `${q} cuota${q > 1 ? "s" : ""} (${rule.freq})`;
+        if (q === rule.quotas) opt.selected = true;
+        qSel.appendChild(opt);
+      }
+    }
+
+    const quotas = Number(qSel.value) || rule.quotas;
+    const totalDue = Number((rule.amount * (1 + rule.interest / 100)).toFixed(2));
+    const perQuota = Number((totalDue / quotas).toFixed(2));
+    const rate = Number(state.cfg.rate) || 1;
+    const bsAmt = (rule.amount * rate).toFixed(2);
+
+    prevBox.innerHTML = `
+      Recibes: <strong>$${rule.amount.toFixed(2)} USD (Bs. ${bsAmt})</strong><br>
+      Total a pagar (${rule.interest}% interés): <strong>$${totalDue.toFixed(2)} USD</strong> en <strong>${quotas} cuota(s) de $${perQuota.toFixed(2)}</strong>
+    `;
+  };
+
+  const origSubmit = window.submitExtraParallelLoan;
+  window.submitExtraParallelLoan = async () => {
+    if (!window.CC || !window.CC.state) return;
+    const { state, showToast } = window.CC;
+    const u = state.users[state.currentUserCedula];
+    if (!u) return;
+
+    const myLoans = Object.values(state.loans || {}).filter(l => l.cedula === u.cedula);
+    const activeCount = myLoans.filter(l => ["activo", "pagando"].includes(l.status)).length;
+    if (activeCount >= 2) {
+      return showToast("⛔ Ya tienes tu crédito principal y 1 adicional activo");
+    }
+
+    const lvlSel = document.getElementById("extraLoanLevelSel");
+    const chosenLvl = Number(lvlSel?.value || 1);
+    const rule = obtenerReglaReal(chosenLvl);
+    if (rule) {
+      const levels = state.cfg?.levels;
+      if (Array.isArray(levels) && levels[chosenLvl - 1]) {
+        levels[chosenLvl - 1].interest = rule.interest;
+      }
+    }
+    if (origSubmit) await origSubmit();
+  };
+
+  setInterval(() => {
+    if (!window.CC || !window.CC.state) return;
+    const { state } = window.CC;
+    const u = state.users[state.currentUserCedula];
+    const addCard = document.getElementById("cliExtraParallelCard");
+    if (!u || !addCard) return;
+
+    const myLoans = Object.values(state.loans || {}).filter(l => l.cedula === u.cedula);
+    const activeCount = myLoans.filter(l => ["activo", "pagando"].includes(l.status)).length;
+    if (activeCount >= 2) {
+      addCard.remove();
+    }
+  }, 800);
+})();
