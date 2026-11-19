@@ -1561,3 +1561,102 @@ import { doc as docMulti, setDoc as setDocMulti } from "https://www.gstatic.com/
     }
   }, 800);
 })();
+// ============================================================
+// BLINDAJE ANTI-BORRADO DE CONFIGURACIÓN (12:00 AM / TASA BCV)
+// ============================================================
+import { getDoc as getDocSafe, setDoc as setDocSafe, doc as docSafe } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+(function blindarConfiguracionDueño() {
+  let restaurando = false;
+
+  async function guardarRespaldoBlindado(cfgObj) {
+    if (!window.CC || !window.CC.db || !cfgObj) return;
+    try {
+      const { rate, ...datosFijos } = cfgObj;
+      await setDocSafe(docSafe(window.CC.db, "credicupo", "backup_config"), {
+        ...datosFijos,
+        updatedAt: Date.now()
+      }, { merge: true });
+    } catch (e) {
+      console.warn("Error guardando respaldo blindado:", e);
+    }
+  }
+
+  // Envolver el guardado del dueño para crear copia blindada
+  const origSaveExtra = window.saveExtraAllCfg;
+  window.saveExtraAllCfg = async () => {
+    if (origSaveExtra) await origSaveExtra();
+    if (window.CC?.state?.cfg) {
+      await guardarRespaldoBlindado(window.CC.state.cfg);
+    }
+  };
+
+  const origSaveAdmin = window.saveAdminConfig;
+  if (origSaveAdmin && !origSaveAdmin._backupWrapped) {
+    const wrapped = async () => {
+      await origSaveAdmin();
+      if (window.CC?.state?.cfg) {
+        await guardarRespaldoBlindado(window.CC.state.cfg);
+      }
+    };
+    wrapped._backupWrapped = true;
+    window.saveAdminConfig = wrapped;
+  }
+
+  // Vigilante continuo: si BCV o un reinicio borra tus datos a las 12 AM, los restaura al instante
+  setInterval(async () => {
+    if (restaurando || !window.CC || !window.CC.db || !window.CC.state || !window.CC.state.loadedCfg) return;
+    const c = window.CC.state.cfg || {};
+
+    // Detectar si faltan tus datos críticos (UBII, Telegram o Pago Móvil borrado)
+    const faltaUbii = !c.ownerUbii;
+    const faltaTg = !c.tgBotToken || !c.tgOwnerChatId;
+    const faltaPm = !c.ownerPm;
+
+    if (faltaUbii || faltaTg || faltaPm) {
+      restaurando = true;
+      try {
+        const snap = await getDocSafe(docSafe(window.CC.db, "credicupo", "backup_config"));
+        if (snap.exists()) {
+          const bkp = snap.data();
+          const tieneDatosValidos = bkp.ownerUbii || bkp.tgBotToken || bkp.ownerPm;
+          if (tieneDatosValidos) {
+            const { updatedAt, rate, ...restaurado } = bkp;
+            const cfgFinal = {
+              ...c,
+              ...restaurado,
+              rate: c.rate || bkp.rate // Mantiene la tasa BCV nueva del día
+            };
+            await setDocSafe(docSafe(window.CC.db, "credicupo", "config"), cfgFinal, { merge: true });
+            window.CC.state.cfg = cfgFinal;
+
+            // Refrescar inputs en pantalla si el dueño está en Configuración
+            const campos = [
+              ["cfgOwnerUbii", cfgFinal.ownerUbii],
+              ["cfgExtDailyPct", cfgFinal.extDailyPct ?? 4],
+              ["cfgTgToken", cfgFinal.tgBotToken],
+              ["cfgTgChatId", cfgFinal.tgOwnerChatId]
+            ];
+            campos.forEach(([id, val]) => {
+              const el = document.getElementById(id);
+              if (el) el.value = val ?? "";
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Error restaurando respaldo:", e);
+      } finally {
+        setTimeout(() => { restaurando = false; }, 4000);
+      }
+    } else {
+      // Si todo está completo y no existe respaldo aún, lo crea automáticamente
+      if (!window._backupCheckedOnce) {
+        window._backupCheckedOnce = true;
+        const snap = await getDocSafe(docSafe(window.CC.db, "credicupo", "backup_config")).catch(() => null);
+        if (snap && !snap.exists()) {
+          await guardarRespaldoBlindado(c);
+        }
+      }
+    }
+  }, 2500);
+})();
