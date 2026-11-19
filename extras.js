@@ -1,5 +1,5 @@
 // ============================================================
-// MÓDULO COMPLETO UNIFICADO - CREDICUPO EXPRESS (SIN FALLAS)
+// MÓDULO COMPLETO UNIFICADO - CREDICUPO EXPRESS (DEFINITIVO)
 // ============================================================
 import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -58,7 +58,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         }
       }
     }
-    if (interest <= 0) interest = 22;
+    if (interest <= 0) interest = 23;
 
     return {
       level: lvl,
@@ -1246,6 +1246,33 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         .sort((a, b) => a.createdAt - b.createdAt);
       const hasPending = myLoans.some(l => l.status === "pendiente");
 
+      // Botones Crédito #1 / Crédito #2 sin parpadeo
+      let switcher = document.getElementById("multiLoanSwitcher");
+      if (actBox && !actBox.classList.contains("hidden") && activeLoans.length > 1) {
+        if (!selectedActiveLoanId || !activeLoans.some(l => l.id === selectedActiveLoanId)) {
+          selectedActiveLoanId = activeLoans[0].id;
+        }
+        if (!switcher) {
+          switcher = document.createElement("div");
+          switcher.id = "multiLoanSwitcher";
+          switcher.style.cssText = "display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;";
+          actBox.insertBefore(switcher, actBox.firstChild);
+        }
+        const swSig = activeLoans.map(l => `${l.id}-${l.id === selectedActiveLoanId ? 1 : 0}`).join("|");
+        if (switcher.dataset.sig !== swSig) {
+          switcher.dataset.sig = swSig;
+          switcher.innerHTML = activeLoans.map((l, i) => `
+            <button type="button" class="btn btn-sm ${l.id === selectedActiveLoanId ? "btn-primary" : "btn-secondary"}"
+              style="margin-top:0;flex:1;"
+              onclick="window._selectClientLoan('${l.id}')">
+              Crédito #${i + 1} ($${Number(l.amount).toFixed(2)})
+            </button>
+          `).join("");
+        }
+      } else if (switcher) {
+        switcher.remove();
+      }
+
       if (actBox && !actBox.classList.contains("hidden")) {
         const infoAlert = actBox.querySelector(".alert.alert-info");
         if (infoAlert) {
@@ -1255,7 +1282,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
           }
         }
 
-        const activeLoan = activeLoans[activeLoans.length - 1];
+        const activeLoan = activeLoans.find(l => l.id === selectedActiveLoanId) || activeLoans[activeLoans.length - 1];
         injectExtensionWidgetInClient(activeLoan, c);
 
         if (activeLoan && activeLoan.disburseProof && !document.getElementById("cliDisbProofBtn")) {
@@ -1275,7 +1302,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         }
       }
 
-      // Tarjeta de crédito adicional: SOLO cuando activeLoans.length === 1 (sin parpadeo)
+      // Tarjeta de crédito adicional: SOLO cuando activeLoans.length === 1 (cero parpadeo)
       let addCard = document.getElementById("cliExtraParallelCard");
       if (u && activeLoans.length === 1 && !u.blocked) {
         if (!addCard) {
