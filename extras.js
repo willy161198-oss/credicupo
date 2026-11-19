@@ -1660,3 +1660,223 @@ import { getDoc as getDocSafe, setDoc as setDocSafe, doc as docSafe } from "http
     }
   }, 2500);
 })();
+// ============================================================
+// MÓDULO EXTRA: INTERÉS REAL ADICIONAL + GANANCIA EN VIVO + BLINDAJE 12AM
+// ============================================================
+(function moduloExtraCrediCupoFinal() {
+  let restaurando = false;
+
+  // 1. Leer porcentaje real configurado en cada nivel
+  function obtenerReglaReal(lvl) {
+    if (!window.CC || !window.CC.state) return null;
+    const cfg = window.CC.state.cfg || {};
+    const levels = Array.isArray(cfg.levels) ? cfg.levels : [];
+    const r = (window.CC.getLevelRule ? window.CC.getLevelRule(lvl) : levels[lvl - 1]) || {};
+
+    const candidatos = [r.pct, r.interest, r.rate, r.int, r.porcentaje, r.ganancia, cfg.interest, cfg.pct];
+    let interest = 0;
+    for (const val of candidatos) {
+      const n = Number(val);
+      if (!isNaN(n) && n > 0) {
+        interest = n;
+        break;
+      }
+    }
+    if (interest <= 0) {
+      for (const [k, v] of Object.entries(r)) {
+        if (!["amount", "quotas", "level", "id", "days"].includes(k)) {
+          const n = Number(v);
+          if (!isNaN(n) && n > 0 && n <= 200) {
+            interest = n;
+            break;
+          }
+        }
+      }
+    }
+    if (interest <= 0) interest = 22;
+
+    return {
+      level: lvl,
+      name: r.name || `Nivel ${lvl}`,
+      amount: Number(r.amount) || 0,
+      interest,
+      quotas: Number(r.quotas) || 1,
+      freq: r.freq || "semanal"
+    };
+  }
+
+  // 2. Actualizar calculadora y envío del crédito adicional (máx. 1 extra)
+  window.updateExtraLoanCalc = () => {
+    if (!window.CC || !window.CC.state) return;
+    const { state } = window.CC;
+    const u = state.users[state.currentUserCedula];
+    if (!u) return;
+
+    const lvlSel = document.getElementById("extraLoanLevelSel");
+    const qSel = document.getElementById("extraLoanQuotaSel");
+    const prevBox = document.getElementById("extraLoanPreview");
+    if (!lvlSel || !qSel || !prevBox) return;
+
+    const chosenLvl = Number(lvlSel.value) || 1;
+    const rule = obtenerReglaReal(chosenLvl);
+    if (!rule) return;
+
+    if (qSel.dataset.forLevel !== String(chosenLvl)) {
+      qSel.dataset.forLevel = String(chosenLvl);
+      qSel.innerHTML = "";
+      for (let q = 1; q <= rule.quotas; q++) {
+        const opt = document.createElement("option");
+        opt.value = String(q);
+        opt.textContent = `${q} cuota${q > 1 ? "s" : ""} (${rule.freq})`;
+        if (q === rule.quotas) opt.selected = true;
+        qSel.appendChild(opt);
+      }
+    }
+
+    const quotas = Number(qSel.value) || rule.quotas;
+    const totalDue = Number((rule.amount * (1 + rule.interest / 100)).toFixed(2));
+    const perQuota = Number((totalDue / quotas).toFixed(2));
+    const rate = Number(state.cfg.rate) || 1;
+    const bsAmt = (rule.amount * rate).toFixed(2);
+
+    prevBox.innerHTML = `
+      Recibes: <strong>$${rule.amount.toFixed(2)} USD (Bs. ${bsAmt})</strong><br>
+      Total a pagar (<strong>${rule.interest}% interés</strong>): <strong>$${totalDue.toFixed(2)} USD</strong> en <strong>${quotas} cuota(s) de $${perQuota.toFixed(2)}</strong>
+    `;
+  };
+
+  window.submitExtraParallelLoan = async () => {
+    if (!window.CC || !window.CC.state) return;
+    const { db, state, showToast } = window.CC;
+    const u = state.users[state.currentUserCedula];
+    if (!u) return;
+    if (u.blocked) return showToast("⛔ Tu cuenta está bloqueada");
+
+    const myLoans = Object.values(state.loans || {}).filter(l => l.cedula === u.cedula);
+    const activeCount = myLoans.filter(l => ["activo", "pagando"].includes(l.status)).length;
+    if (activeCount >= 2) {
+      return showToast("⛔ Ya tienes tu crédito principal y 1 adicional activo");
+    }
+    if (myLoans.some(l => l.status === "pendiente")) {
+      return showToast("⏳ Ya tienes una solicitud pendiente por aprobar");
+    }
+
+    const lvlSel = document.getElementById("extraLoanLevelSel");
+    const qSel = document.getElementById("extraLoanQuotaSel");
+    const chosenLvl = Number(lvlSel?.value || 1);
+    const maxLvl = Number(u.level) || 1;
+    if (chosenLvl < 1 || chosenLvl > maxLvl) {
+      return showToast("Nivel no permitido para tu cuenta");
+    }
+
+    const rule = obtenerReglaReal(chosenLvl);
+    if (!rule) return;
+
+    const quotas = Math.min(rule.quotas, Math.max(1, Number(qSel?.value || rule.quotas)));
+    const totalDue = Number((rule.amount * (1 + rule.interest / 100)).toFixed(2));
+    const quotaAmount = Number((totalDue / quotas).toFixed(2));
+    const loanId = "LN_" + Date.now();
+
+    const fs = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+    await fs.setDoc(fs.doc(db, "loans", loanId), {
+      id: loanId,
+      cedula: u.cedula,
+      nombre: u.nombre,
+      phone: u.phone,
+      payInfo: u.payInfo,
+      level: chosenLvl,
+      levelName: rule.name,
+      amount: rule.amount,
+      interest: rule.interest,
+      totalDue,
+      quotas,
+      quotaAmount,
+      freq: rule.freq,
+      isAdditional: true,
+      status: "pendiente",
+      createdAt: Date.now()
+    });
+
+    const title = `Crédito Adicional Solicitado ➕💸`;
+    const body = `${u.nombre} (V-${u.cedula}) pidió crédito adicional Nivel ${chosenLvl} (${rule.name}) por $${rule.amount.toFixed(2)} USD (+${rule.interest}% = $${totalDue.toFixed(2)} USD).`;
+    if (window.sendOwnerTelegramAlert) {
+      await window.sendOwnerTelegramAlert(`<b>${title}</b>\n${body}`, title, body);
+    }
+    showToast(`✅ Solicitud enviada (+${rule.interest}% interés)`);
+  };
+
+  // 3. Blindaje de guardado para que a las 12:00 AM no se borre tu configuración
+  const origSaveExtra = window.saveExtraAllCfg;
+  window.saveExtraAllCfg = async () => {
+    if (origSaveExtra) await origSaveExtra();
+    if (window.CC?.db && window.CC?.state?.cfg) {
+      const fs = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+      const { rate, ...fijos } = window.CC.state.cfg;
+      await fs.setDoc(fs.doc(window.CC.db, "credicupo", "backup_config"), { ...fijos, updatedAt: Date.now() }, { merge: true }).catch(() => {});
+    }
+  };
+
+  // 4. Vigilante en vivo: límite de 1 extra + ganancia por cuota + restauración a las 12 AM
+  setInterval(async () => {
+    if (!window.CC || !window.CC.state || !window.CC.state.loadedCfg) return;
+    const { db, state } = window.CC;
+    const c = state.cfg || {};
+
+    // A) Esconder tarjeta de crédito adicional si ya tiene 2 activos
+    const u = state.users[state.currentUserCedula];
+    const addCard = document.getElementById("cliExtraParallelCard");
+    if (u && addCard) {
+      const myLoans = Object.values(state.loans || {}).filter(l => l.cedula === u.cedula);
+      const activeCount = myLoans.filter(l => ["activo", "pagando"].includes(l.status)).length;
+      if (activeCount >= 2) addCard.remove();
+    }
+
+    // B) Actualizar Ganancia en tiempo real por cuota pagada
+    if (state.isAdmin) {
+      const allLoans = Object.values(state.loans || {});
+      let gananciaReal = 0;
+      allLoans.forEach(l => {
+        if (!["activo", "pagando", "pagado"].includes(l.status)) return;
+        const prestado = Number(l.amount) || 0;
+        const totalPagar = Number(l.totalDue) || prestado;
+        const gananciaTotal = Math.max(0, totalPagar - prestado);
+        if (l.status === "pagado") {
+          gananciaReal += gananciaTotal;
+        } else if (Array.isArray(l.schedule) && totalPagar > 0) {
+          const cobrado = l.schedule
+            .filter(q => q.status === "pagada")
+            .reduce((acc, q) => acc + (Number(q.amount) || 0), 0);
+          gananciaReal += (cobrado / totalPagar) * gananciaTotal;
+        }
+      });
+
+      const stripCards = document.querySelectorAll("#viewAdmin .summary-strip > div");
+      if (stripCards && stripCards.length >= 3) {
+        const valEl = stripCards[2].querySelector("div:last-child, strong, span");
+        if (valEl && valEl.textContent.includes("$")) {
+          valEl.textContent = `$${gananciaReal.toFixed(2)}`;
+        }
+      }
+    }
+
+    // C) Restaurar configuración automáticamente si BCV la borra a las 12 AM
+    if (!restaurando && (!c.ownerUbii || !c.tgBotToken || !c.tgOwnerChatId || !c.ownerPm)) {
+      restaurando = true;
+      try {
+        const fs = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+        const snap = await fs.getDoc(fs.doc(db, "credicupo", "backup_config"));
+        if (snap.exists()) {
+          const bkp = snap.data();
+          if (bkp.ownerUbii || bkp.tgBotToken || bkp.ownerPm) {
+            const { updatedAt, rate, ...restaurado } = bkp;
+            const cfgFinal = { ...c, ...restaurado, rate: c.rate || bkp.rate };
+            await fs.setDoc(fs.doc(db, "credicupo", "config"), cfgFinal, { merge: true });
+            state.cfg = cfgFinal;
+          }
+        }
+      } catch (e) {} finally {
+        setTimeout(() => { restaurando = false; }, 4000);
+      }
+    }
+  }, 1200);
+})();
