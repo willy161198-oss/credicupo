@@ -1523,3 +1523,100 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   obs.observe(document.body, { childList: true, subtree: true });
   setInterval(syncAllExtraFeatures, 1200);
 })();
+// ============================================================
+// BOTÓN PARA RECHAZAR PAGO DE CUOTA EQUIVOCADA (PANEL DUEÑO)
+// ============================================================
+(function moduloRechazarPagoCuota() {
+  window.rejectQuotaPayment = async (loanId, instNum) => {
+    if (!window.CC || !window.CC.state) return;
+    const { db, state, showToast } = window.CC;
+
+    const pin = prompt("Escribe tu Código Maestro de Dueño para rechazar este pago:");
+    if (pin !== String(state.cfg.adminPin)) {
+      return showToast("⛔ Código Maestro incorrecto");
+    }
+
+    const motivo = prompt("Motivo del rechazo (ej: Seleccionaste la cuota equivocada):", "Seleccionaste la cuota equivocada. Por favor vuelve a reportar la cuota correcta.");
+    if (motivo === null) return;
+
+    const l = state.loans[loanId];
+    if (!l || !Array.isArray(l.schedule)) return;
+
+    const sched = l.schedule.map(q => {
+      if (Number(q.num) !== Number(instNum)) return q;
+      const limpio = { ...q, status: "pendiente" };
+      delete limpio.payRef;
+      delete limpio.payProof;
+      delete limpio.paidAt;
+      delete limpio.reportedAt;
+      return limpio;
+    });
+
+    const fs = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+    await fs.updateDoc(fs.doc(db, "loans", loanId), {
+      status: "activo",
+      schedule: sched
+    });
+
+    if (window.sendClientTelegramAlert) {
+      await window.sendClientTelegramAlert(
+        l.cedula,
+        `Pago de Cuota #${instNum} rechazado ⚠️`,
+        `Hola ${l.nombre}, rechazamos el reporte de tu Cuota #${instNum} (${motivo}). Entra a CrediCupo Express y vuelve a subir el capture en la cuota correcta.`
+      );
+    }
+
+    showToast(`❌ Pago de Cuota #${instNum} rechazado y devuelto a pendiente`);
+  };
+
+  // Inyectar botón "❌ Rechazar" en cuotas en revisión o pagando
+  setInterval(() => {
+    if (!window.CC || !window.CC.state || !window.CC.state.isAdmin) return;
+    const admPane = document.getElementById("admPaneLoans");
+    if (!admPane || admPane.classList.contains("hidden")) return;
+
+    const { state } = window.CC;
+    admPane.querySelectorAll(".item-box").forEach(card => {
+      const delBtn = card.querySelector("button[onclick^='askDeleteLoan']");
+      if (!delBtn) return;
+      const match = delBtn.getAttribute("onclick").match(/askDeleteLoan\('([^']+)'/);
+      if (!match) return;
+      const loanId = match[1];
+      const loan = state.loans[loanId];
+      if (!loan || !Array.isArray(loan.schedule)) return;
+
+      // Buscar cuotas que tengan reporte pendiente de aprobación (no pagadas aún)
+      const cuotasEnRevision = loan.schedule.filter(q =>
+        q.status !== "pagada" && (q.status === "revision" || q.status === "pagando" || q.payRef || q.payProof)
+      );
+
+      cuotasEnRevision.forEach(q => {
+        const btnId = `btnRejQ_${loanId}_${q.num}`;
+        if (document.getElementById(btnId)) return;
+
+        // Buscar la fila de esa cuota (C1/2, C2/2, etc.)
+        const rows = Array.from(card.querySelectorAll("div"));
+        const targetRow = rows.find(el =>
+          el.children.length > 0 &&
+          el.innerText &&
+          el.innerText.includes(`C${q.num}/`) &&
+          !el.querySelector(`#${btnId}`)
+        );
+
+        const rejBtn = document.createElement("button");
+        rejBtn.id = btnId;
+        rejBtn.type = "button";
+        rejBtn.className = "btn btn-sm btn-danger";
+        rejBtn.style.cssText = "margin-top:4px;margin-left:4px;padding:4px 8px;font-size:11px;";
+        rejBtn.textContent = `❌ Rechazar C${q.num}`;
+        rejBtn.onclick = () => window.rejectQuotaPayment(loanId, q.num);
+
+        if (targetRow) {
+          targetRow.appendChild(rejBtn);
+        } else {
+          delBtn.parentNode.insertBefore(rejBtn, delBtn);
+        }
+      });
+    });
+  }, 900);
+})();
