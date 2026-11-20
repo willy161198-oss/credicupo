@@ -1,6 +1,6 @@
 // ============================================================
 // MÓDULO ÚNICO Y DEFINITIVO - CREDICUPO EXPRESS
-// Niveles con lvl reparado + Teclado Estable + Blindaje Total
+// Menú Modular en Cliente + Menú Modular en Dueño + Blindaje Total
 // ============================================================
 import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -12,6 +12,8 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   let selectedActiveLoanId = null;
   let restaurandoCfg = false;
   let activeRuleTab = "datos_app";
+  let activeClientTab = "paga_cuota";
+  let clientTabInitializedFor = null;
 
   const NOMBRES_10_NIVELES = [
     "Burusa", "Basurita", "Piedrita", "Grava", "Cerro",
@@ -297,7 +299,199 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   }
 
   // ------------------------------------------------------------
-  // C. PANEL MODULAR EN "EDITAR REGLAS" (SIN CIERRE DE TECLADO)
+  // C. MENÚ MODULAR EN VISTA DEL CLIENTE (LOS 7 BOTONES)
+  // ------------------------------------------------------------
+  window.selectClientMenuTab = (tabKey) => {
+    activeClientTab = tabKey;
+    applyClientMenuVisibility();
+    if (tabKey === "pedir_otro" && typeof window.updateExtraLoanCalc === "function") {
+      window.updateExtraLoanCalc();
+    }
+  };
+
+  function applyClientMenuVisibility() {
+    if (!window.CC || !window.CC.state) return;
+    const { state } = window.CC;
+    const viewClient = document.getElementById("viewClient");
+    if (!viewClient || viewClient.classList.contains("hidden") || !state.currentUserCedula) return;
+
+    const u = state.users[state.currentUserCedula];
+    if (!u) return;
+
+    const myLoans = Object.values(state.loans || {}).filter(l => l.cedula === state.currentUserCedula);
+    const activeLoans = myLoans
+      .filter(l => ["activo", "pagando"].includes(l.status))
+      .sort((a, b) => a.createdAt - b.createdAt);
+    const hasPending = myLoans.some(l => l.status === "pendiente");
+
+    // Elegir pestaña inicial inteligente al entrar por primera vez
+    if (clientTabInitializedFor !== u.cedula) {
+      clientTabInitializedFor = u.cedula;
+      activeClientTab = (activeLoans.length > 0 || hasPending) ? "paga_cuota" : "pedir_credito";
+    }
+
+    // 1. Inyectar barra de 7 botones justo debajo de la tarjeta azul del cliente
+    let navWrap = document.getElementById("clientModularNavCard");
+    const heroCard = viewClient.querySelector(".hero-card, .card");
+    if (!navWrap) {
+      navWrap = document.createElement("div");
+      navWrap.id = "clientModularNavCard";
+      navWrap.className = "card";
+      navWrap.style.padding = "12px";
+      if (heroCard && heroCard.nextSibling) {
+        viewClient.insertBefore(navWrap, heroCard.nextSibling);
+      } else {
+        viewClient.appendChild(navWrap);
+      }
+    }
+
+    const navSig = `${activeClientTab}|${activeLoans.length}|${hasPending ? 1 : 0}`;
+    if (navWrap.dataset.navSig !== navSig) {
+      navWrap.dataset.navSig = navSig;
+      const btnStyle = (key, extra = "") => {
+        const activo = activeClientTab === key;
+        return `${extra}background:${activo ? "#00875A" : "#111827"};color:#FFFFFF;border:1px solid ${activo ? "#00875A" : "#1F2937"};border-radius:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.12);line-height:1.2;text-align:center;`;
+      };
+
+      navWrap.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+          <button type="button" onclick="selectClientMenuTab('pedir_credito')"
+            style="${btnStyle('pedir_credito', 'padding:14px 8px;font-size:15px;')}">
+            Pedir<br>Crédito
+          </button>
+          <button type="button" onclick="selectClientMenuTab('paga_cuota')"
+            style="${btnStyle('paga_cuota', 'padding:14px 8px;font-size:15px;')}">
+            Paga tu<br>cuota
+          </button>
+          <button type="button" onclick="selectClientMenuTab('pedir_otro')"
+            style="${btnStyle('pedir_otro', 'padding:12px 8px;font-size:13px;')}">
+            Pedir otro<br>crédito
+          </button>
+          <button type="button" onclick="selectClientMenuTab('datos_cuentas')"
+            style="${btnStyle('datos_cuentas', 'padding:12px 8px;font-size:13px;')}">
+            Tus datos<br>Y cuentas
+          </button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1.3fr;gap:8px;margin-bottom:8px;">
+          <button type="button" onclick="selectClientMenuTab('niveles')"
+            style="${btnStyle('niveles', 'padding:10px 8px;font-size:13px;')}">
+            Niveles
+          </button>
+          <button type="button" onclick="selectClientMenuTab('niveles_anterior')"
+            style="${btnStyle('niveles_anterior', 'padding:10px 8px;font-size:13px;')}">
+            Niveles anterior
+          </button>
+        </div>
+
+        <button type="button" onclick="selectClientMenuTab('terminos')"
+          style="${btnStyle('terminos', 'width:100%;padding:11px 10px;font-size:13px;')}">
+          Términos y condiciones
+        </button>
+      `;
+    }
+
+    // 2. Identificar las secciones originales de la vista cliente
+    const reqBox = document.getElementById("cliRequestLoanBox") || document.getElementById("reqQuotaSelect")?.closest(".card");
+    const actBox = document.getElementById("cliActiveLoanBox");
+    const extraCard = document.getElementById("cliExtraParallelCard");
+    const payCard = document.getElementById("cliEditPayMethodCard");
+    const levelsCard = document.getElementById("cliLevelsList")?.closest(".card");
+    const histCard = document.getElementById("cliHistoryList")?.closest(".card");
+
+    // Cajas auxiliares de aviso para Pedir Crédito, Pedir Otro Crédito y Términos
+    let infoHelperCard = document.getElementById("cliModularHelperCard");
+    if (!infoHelperCard) {
+      infoHelperCard = document.createElement("div");
+      infoHelperCard.id = "cliModularHelperCard";
+      infoHelperCard.className = "card hidden";
+      viewClient.appendChild(infoHelperCard);
+    }
+
+    // Ocultar todas las secciones secundarias antes de mostrar solo la elegida
+    if (reqBox) reqBox.classList.add("hidden");
+    if (actBox) actBox.classList.add("hidden");
+    if (extraCard) extraCard.classList.add("hidden");
+    if (payCard) payCard.classList.add("hidden");
+    if (levelsCard) levelsCard.classList.add("hidden");
+    if (histCard) histCard.classList.add("hidden");
+    infoHelperCard.classList.add("hidden");
+
+    // 3. Mostrar únicamente el bloque correspondiente al botón seleccionado
+    if (activeClientTab === "pedir_credito") {
+      if (activeLoans.length === 0 && !hasPending && reqBox) {
+        reqBox.classList.remove("hidden");
+      } else {
+        infoHelperCard.classList.remove("hidden");
+        infoHelperCard.innerHTML = `
+          <h3 class="card-title">💸 Solicitud de Crédito Principal</h3>
+          <div class="alert alert-info" style="margin-bottom:8px;font-size:12px;">
+            ${hasPending
+              ? "⏳ Ya tienes una solicitud en revisión. Apenas el dueño la apruebe podrás verla en <strong>Paga tu cuota</strong>."
+              : "✅ Ya tienes un crédito principal activo. Puedes pagarlo en <strong>Paga tu cuota</strong> o pedir un segundo préstamo en <strong>Pedir otro crédito</strong>."}
+          </div>
+          <div class="grid-2">
+            <button type="button" class="btn btn-primary" style="margin-top:0;" onclick="selectClientMenuTab('paga_cuota')">Ir a Paga tu cuota</button>
+            <button type="button" class="btn btn-secondary" style="margin-top:0;" onclick="selectClientMenuTab('pedir_otro')">Pedir otro crédito</button>
+          </div>
+        `;
+      }
+    } else if (activeClientTab === "paga_cuota") {
+      if (actBox && (activeLoans.length > 0 || hasPending)) {
+        actBox.classList.remove("hidden");
+      } else {
+        infoHelperCard.classList.remove("hidden");
+        infoHelperCard.innerHTML = `
+          <h3 class="card-title">💳 Paga tu Cuota</h3>
+          <div class="alert alert-info" style="margin-bottom:8px;font-size:12px;">
+            No tienes cuotas pendientes por pagar en este momento.
+          </div>
+          <button type="button" class="btn btn-primary" onclick="selectClientMenuTab('pedir_credito')">Solicitar un Crédito Ahora</button>
+        `;
+      }
+    } else if (activeClientTab === "pedir_otro") {
+      if (extraCard && activeLoans.length === 1 && !u.blocked) {
+        extraCard.classList.remove("hidden");
+        const formWrap = document.getElementById("extraParallelForm");
+        if (formWrap) formWrap.classList.remove("hidden");
+      } else {
+        infoHelperCard.classList.remove("hidden");
+        let msg = "Para pedir un crédito adicional debes tener primero tu crédito principal activo.";
+        if (activeLoans.length >= 2) {
+          msg = "⛔ Ya tienes activos tu crédito principal y tu crédito adicional (máximo 2 créditos simultáneos).";
+        } else if (hasPending) {
+          msg = "⏳ Ya tienes una solicitud pendiente en revisión por el dueño.";
+        }
+        infoHelperCard.innerHTML = `
+          <h3 class="card-title">➕ Pedir Otro Crédito</h3>
+          <div class="alert alert-warn" style="margin-bottom:8px;font-size:12px;">${msg}</div>
+          <button type="button" class="btn btn-primary" onclick="selectClientMenuTab('${activeLoans.length === 0 ? "pedir_credito" : "paga_cuota"}')">
+            ${activeLoans.length === 0 ? "Pedir Crédito Principal" : "Ver Mis Cuotas"}
+          </button>
+        `;
+      }
+    } else if (activeClientTab === "datos_cuentas") {
+      if (payCard) payCard.classList.remove("hidden");
+    } else if (activeClientTab === "niveles") {
+      if (levelsCard) {
+        levelsCard.classList.remove("hidden");
+        const listEl = document.getElementById("cliLevelsList");
+        if (listEl) listEl.classList.remove("hidden");
+      }
+    } else if (activeClientTab === "niveles_anterior") {
+      if (histCard) histCard.classList.remove("hidden");
+    } else if (activeClientTab === "terminos") {
+      const terms = (state.cfg?.termsText || "Al solicitar un crédito en CrediCupo Express aceptas pagar tus cuotas puntualmente en las fechas acordadas.").trim();
+      infoHelperCard.classList.remove("hidden");
+      infoHelperCard.innerHTML = `
+        <h3 class="card-title">📜 Términos y Condiciones</h3>
+        <div style="font-size:12px;line-height:1.5;color:#1E293B;background:#F8FAFC;border:1px solid #CBD5E1;border-radius:10px;padding:12px;white-space:pre-line;">${terms}</div>
+      `;
+    }
+  }
+
+  // ------------------------------------------------------------
+  // D. PANEL MODULAR EN "EDITAR REGLAS" (DUEÑO)
   // ------------------------------------------------------------
   window.selectRuleSection = (secKey) => {
     activeRuleTab = secKey;
@@ -686,7 +880,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   };
 
   // ------------------------------------------------------------
-  // D. MODAL PARA QUE EL DUEÑO SUBA CAPTURE Y COPIE DATOS AL APROBAR
+  // E. MODAL PARA QUE EL DUEÑO SUBA CAPTURE Y COPIE DATOS AL APROBAR
   // ------------------------------------------------------------
   if (!document.getElementById("ownerDisburseModal")) {
     const modal = document.createElement("div");
@@ -844,7 +1038,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   };
 
   // ------------------------------------------------------------
-  // E. NOTIFICACIONES, RECHAZO DE CUOTA Y PRÓRROGAS
+  // F. NOTIFICACIONES, RECHAZO DE CUOTA Y PRÓRROGAS
   // ------------------------------------------------------------
   const origRequestLoan = window.requestLoan;
   if (origRequestLoan && !origRequestLoan._notifWrapped) {
@@ -860,6 +1054,8 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       const title = `Nueva solicitud de préstamo 💸✅`;
       const body = `${u.nombre} (V-${u.cedula}) pidió $${rule.amount.toFixed(2)} USD en ${q} cuota(s).`;
       await window.sendOwnerTelegramAlert(`<b>${title}</b>\n${body}`, title, body);
+      activeClientTab = "paga_cuota";
+      applyClientMenuVisibility();
     };
     wrappedReq._notifWrapped = true;
     window.requestLoan = wrappedReq;
@@ -1064,7 +1260,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   };
 
   // ------------------------------------------------------------
-  // F. EDICIÓN DE DATOS / CUENTA DEL CLIENTE SOLO CON PERMISO DEL DUEÑO
+  // G. EDICIÓN DE DATOS / CUENTA DEL CLIENTE SOLO CON PERMISO DEL DUEÑO
   // ------------------------------------------------------------
   window.requestProfileEditPermission = async () => {
     if (!window.CC) return;
@@ -1286,7 +1482,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   };
 
   // ------------------------------------------------------------
-  // G. CRÉDITO ADICIONAL PARALELO (MÁX. 1 EXTRA + INTERÉS REAL)
+  // H. CRÉDITO ADICIONAL PARALELO (MÁX. 1 EXTRA + INTERÉS REAL)
   // ------------------------------------------------------------
   function getAvailableLevelsUpTo(maxLevel) {
     const result = [];
@@ -1391,6 +1587,8 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     const body = `${u.nombre} (V-${u.cedula}) pidió crédito adicional Nivel ${chosenLvl} (${rule.name}) por $${rule.amount.toFixed(2)} USD (+${rule.interest}% = $${totalDue.toFixed(2)} USD) en ${quotas} cuota(s).`;
     await window.sendOwnerTelegramAlert(`<b>${title}</b>\n${body}`, title, body);
 
+    activeClientTab = "paga_cuota";
+    applyClientMenuVisibility();
     showToast(`✅ Solicitud enviada (+${rule.interest}% interés)`);
   };
 
@@ -1400,7 +1598,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   };
 
   // ------------------------------------------------------------
-  // H. GANANCIA EN VIVO (PINTADA DIRECTO EN CADA REFRESHUI)
+  // I. GANANCIA EN VIVO (PINTADA DIRECTO EN CADA REFRESHUI)
   // ------------------------------------------------------------
   function calcularGananciaTotalReal() {
     if (!window.CC || !window.CC.state) return 0;
@@ -1454,7 +1652,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   }
 
   // ------------------------------------------------------------
-  // I. CUADRO LIMPIO DE PAGO + PRÓRROGAS + SINCRONIZACIÓN GENERAL
+  // J. CUADRO LIMPIO DE PAGO + PRÓRROGAS + SINCRONIZACIÓN GENERAL
   // ------------------------------------------------------------
   function renderCleanClientPayBox(infoAlert, c) {
     const text = infoAlert.innerText || "";
@@ -1591,6 +1789,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         const res = origRefresh.apply(this, args);
         pintarGananciaEnPantalla();
         renderModularRulesPanel(false);
+        applyClientMenuVisibility();
         return res;
       };
       wrappedRefresh._gananciaWrapped = true;
@@ -1657,7 +1856,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       const hasPending = myLoans.some(l => l.status === "pendiente");
 
       let switcher = document.getElementById("multiLoanSwitcher");
-      if (actBox && !actBox.classList.contains("hidden") && activeLoans.length > 1) {
+      if (actBox && activeLoans.length > 1) {
         if (!selectedActiveLoanId || !activeLoans.some(l => l.id === selectedActiveLoanId)) {
           selectedActiveLoanId = activeLoans[0].id;
         }
@@ -1682,7 +1881,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         switcher.remove();
       }
 
-      if (actBox && !actBox.classList.contains("hidden")) {
+      if (actBox) {
         const infoAlert = actBox.querySelector(".alert.alert-info");
         if (infoAlert) {
           const curTitle = (infoAlert.innerText.match(/Paga tu Cuota[^\n]+/) || [""])[0];
@@ -1747,14 +1946,11 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
             addCard.innerHTML = `
               <div class="card-title" style="margin-bottom:6px;">
                 <span>➕ Pedir Otro Crédito Activo</span>
-                <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('extraParallelForm').classList.toggle('hidden');updateExtraLoanCalc();">
-                  Solicitar
-                </button>
               </div>
               <div style="font-size:12px;color:var(--muted);">
                 Puedes solicitar 1 crédito adicional en tu nivel actual (<strong>Nivel ${u.level}</strong>) o en un nivel inferior.
               </div>
-              <div id="extraParallelForm" class="hidden" style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px;">
+              <div id="extraParallelForm" style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px;">
                 <label style="margin-top:0;">Elige el nivel del crédito adicional</label>
                 <select id="extraLoanLevelSel" onchange="updateExtraLoanCalc()">
                   ${optionsHtml}
@@ -1773,6 +1969,8 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       } else if (addCard) {
         addCard.remove();
       }
+
+      applyClientMenuVisibility();
     }
 
     pintarGananciaEnPantalla();
@@ -1930,10 +2128,12 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     }
   }
 
-  // Solo observar cambios fuera del panel de reglas para no interrumpir la escritura
+  // Solo observar cambios fuera de formularios activos para no cerrar el teclado móvil
   const obs = new MutationObserver((mutations) => {
     const wrap = document.getElementById("modularRulesWrapper");
+    const payCard = document.getElementById("cliEditPayMethodCard");
     if (wrap && wrap.contains(document.activeElement)) return;
+    if (payCard && payCard.contains(document.activeElement)) return;
     const soloDentroDeReglas = mutations.every(m => wrap && wrap.contains(m.target));
     if (soloDentroDeReglas) return;
     syncAllExtraFeatures();
