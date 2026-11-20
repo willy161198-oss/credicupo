@@ -1,6 +1,6 @@
 // ============================================================
 // MÓDULO ÚNICO Y DEFINITIVO - CREDICUPO EXPRESS
-// Panel Modular en "Editar Reglas" + Blindaje Total 10 Niveles
+// Teclado Estable (Sin cierre al escribir) + Niveles Editables + Blindaje Total
 // ============================================================
 import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -296,11 +296,65 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   }
 
   // ------------------------------------------------------------
-  // C. PANEL MODULAR EN "EDITAR REGLAS" (CADA OPCIÓN CON SU GUARDAR)
+  // C. PANEL MODULAR EN "EDITAR REGLAS" (SIN CIERRE DE TECLADO)
   // ------------------------------------------------------------
   window.selectRuleSection = (secKey) => {
     activeRuleTab = secKey;
+    const oldWrap = document.getElementById("modularRulesWrapper");
+    if (oldWrap) oldWrap.remove();
     renderModularRulesPanel(true);
+  };
+
+  window.renumerarNivelesMod = () => {
+    document.querySelectorAll(".mod-level-card").forEach((card, i) => {
+      const titleEl = card.querySelector("strong");
+      if (titleEl) titleEl.textContent = `Nivel ${i + 1}`;
+    });
+  };
+
+  window.agregarNivelMod = () => {
+    const cont = document.getElementById("modLevelsContainer");
+    if (!cont) return;
+    const idx = cont.querySelectorAll(".mod-level-card").length;
+    const nombreSugerido = NOMBRES_10_NIVELES[idx] || `Nivel ${idx + 1}`;
+    const div = document.createElement("div");
+    div.className = "mod-level-card";
+    div.style.cssText = "background:#F8FAFC;border:1px solid #CBD5E1;border-radius:10px;padding:10px;margin-bottom:8px;";
+    div.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px;">
+        <strong style="font-size:13px;color:#0F172A;">Nivel ${idx + 1}</strong>
+        <button type="button" class="btn btn-sm btn-danger" style="margin-top:0;padding:4px 8px;font-size:11px;"
+          onclick="this.closest('.mod-level-card').remove();window.renumerarNivelesMod();">
+          🗑️ Eliminar
+        </button>
+      </div>
+      <label style="margin-top:0;">Nombre del Nivel</label>
+      <input type="text" class="mod-lvl-name" value="${nombreSugerido}">
+      <div class="grid-2">
+        <div>
+          <label>Monto ($ USD)</label>
+          <input type="number" step="0.01" class="mod-lvl-amt" value="${(idx + 1) * 5}">
+        </div>
+        <div>
+          <label>Interés (%)</label>
+          <input type="number" step="0.5" class="mod-lvl-pct" value="23">
+        </div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <label>Cuotas máx.</label>
+          <input type="number" min="1" max="24" class="mod-lvl-quotas" value="2">
+        </div>
+        <div>
+          <label>Frecuencia</label>
+          <select class="mod-lvl-freq">
+            <option value="semanal" selected>Semanal (7d)</option>
+            <option value="quincenal">Quincenal (15d)</option>
+          </select>
+        </div>
+      </div>
+    `;
+    cont.appendChild(div);
   };
 
   window.saveModularRuleSection = async (secKey) => {
@@ -342,25 +396,30 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         await guardarParcialBlindado({ tgBotToken, tgOwnerChatId });
         showToast("✅ Notificaciones guardadas y blindadas");
       } else if (secKey === "niveles") {
+        const cards = document.querySelectorAll(".mod-level-card");
         const nuevosNiveles = [];
-        for (let i = 0; i < 10; i++) {
-          const nombreFijo = NOMBRES_10_NIVELES[i];
-          const amount = Number(document.getElementById(`modLvlAmt_${i}`)?.value || 0);
-          const pct = Number(document.getElementById(`modLvlPct_${i}`)?.value || 23);
-          const quotas = Number(document.getElementById(`modLvlQuotas_${i}`)?.value || 1);
-          const freq = document.getElementById(`modLvlFreq_${i}`)?.value || "semanal";
+        cards.forEach((card, idx) => {
+          const name = (card.querySelector(".mod-lvl-name")?.value || `Nivel ${idx + 1}`).trim();
+          const amount = Number(card.querySelector(".mod-lvl-amt")?.value || 0);
+          const pct = Number(card.querySelector(".mod-lvl-pct")?.value || 23);
+          const quotas = Number(card.querySelector(".mod-lvl-quotas")?.value || 1);
+          const freq = card.querySelector(".mod-lvl-freq")?.value || "semanal";
           nuevosNiveles.push({
-            level: i + 1,
-            name: nombreFijo,
+            level: idx + 1,
+            name,
             amount,
             pct,
             interest: pct,
             quotas,
             freq
           });
-        }
+        });
+        if (nuevosNiveles.length === 0) return showToast("Debe haber al menos 1 nivel");
         await guardarParcialBlindado({ levels: nuevosNiveles });
-        showToast("✅ Los 10 niveles guardados y blindados");
+        const oldWrap = document.getElementById("modularRulesWrapper");
+        if (oldWrap) oldWrap.remove();
+        renderModularRulesPanel(true);
+        showToast(`✅ ${nuevosNiveles.length} niveles guardados y blindados`);
       } else if (secKey === "tasa_bcv") {
         const rate = Number(document.getElementById("modBcvRate")?.value || 0);
         if (rate <= 0) return showToast("Ingresa una tasa BCV válida");
@@ -394,21 +453,30 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     const cfgPane = document.getElementById("admPaneCfg");
     if (!cfgPane || cfgPane.classList.contains("hidden")) return;
 
-    // Ocultar el formulario antiguo largo para que no estorbe ni pise datos
-    Array.from(cfgPane.children).forEach(ch => {
-      if (ch.id !== "modularRulesWrapper") ch.classList.add("hidden");
-    });
-
-    let wrap = document.getElementById("modularRulesWrapper");
-    if (!wrap) {
-      wrap = document.createElement("div");
-      wrap.id = "modularRulesWrapper";
-      wrap.className = "card";
-      cfgPane.appendChild(wrap);
+    // NUNCA tocar ni reconstruir el panel mientras el usuario esté escribiendo o tenga un campo enfocado
+    const existingWrap = document.getElementById("modularRulesWrapper");
+    if (existingWrap && existingWrap.contains(document.activeElement)) {
+      return;
     }
 
-    if (!forceRebuild && wrap.dataset.renderedTab === activeRuleTab) return;
+    Array.from(cfgPane.children).forEach(ch => {
+      if (ch.id !== "modularRulesWrapper" && !ch.classList.contains("hidden")) {
+        ch.classList.add("hidden");
+      }
+    });
+
+    // Si el contenedor ya existe para esta pestaña y no se forzó reconstrucción, NO tocarlo
+    if (existingWrap && !forceRebuild && existingWrap.dataset.renderedTab === activeRuleTab) {
+      return;
+    }
+
+    const wrap = existingWrap || document.createElement("div");
+    wrap.id = "modularRulesWrapper";
+    wrap.className = "card";
     wrap.dataset.renderedTab = activeRuleTab;
+    if (!existingWrap) {
+      cfgPane.appendChild(wrap);
+    }
 
     const c = window.CC.state.cfg || {};
     const botones = [
@@ -491,36 +559,52 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         </div>
       `;
     } else if (activeRuleTab === "niveles") {
-      const levelsArr = Array.isArray(c.levels) ? c.levels : [];
-      const rowsHtml = NOMBRES_10_NIVELES.map((nombreNivel, idx) => {
-        const lvlObj = levelsArr[idx] || {};
-        const amt = lvlObj.amount ?? (idx === 0 ? 1 : (idx + 1) * 5);
+      const levelsArr = (Array.isArray(c.levels) && c.levels.length > 0)
+        ? c.levels
+        : NOMBRES_10_NIVELES.map((n, i) => ({
+            level: i + 1,
+            name: n,
+            amount: i === 0 ? 1 : (i + 1) * 5,
+            pct: 23,
+            quotas: i < 2 ? 1 : 2,
+            freq: "semanal"
+          }));
+
+      const rowsHtml = levelsArr.map((lvlObj, idx) => {
+        const nombreNivel = lvlObj.name || NOMBRES_10_NIVELES[idx] || `Nivel ${idx + 1}`;
+        const amt = lvlObj.amount ?? 1;
         const pct = lvlObj.pct ?? lvlObj.interest ?? 23;
-        const quotas = lvlObj.quotas ?? (idx < 2 ? 1 : 2);
+        const quotas = lvlObj.quotas ?? 1;
         const freq = lvlObj.freq || "semanal";
         return `
-          <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:10px;padding:10px;margin-bottom:8px;">
-            <div style="font-weight:800;font-size:13px;color:#0F172A;margin-bottom:6px;">
-              Nivel ${idx + 1}: <span style="color:#00875A;">${nombreNivel}</span> <span style="font-size:11px;color:#64748B;">(Nombre fijo)</span>
+          <div class="mod-level-card" style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:10px;padding:10px;margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px;">
+              <strong style="font-size:13px;color:#0F172A;">Nivel ${idx + 1}</strong>
+              <button type="button" class="btn btn-sm btn-danger" style="margin-top:0;padding:4px 8px;font-size:11px;"
+                onclick="this.closest('.mod-level-card').remove();window.renumerarNivelesMod();">
+                🗑️ Eliminar
+              </button>
             </div>
+            <label style="margin-top:0;">Nombre del Nivel</label>
+            <input type="text" class="mod-lvl-name" value="${nombreNivel}">
             <div class="grid-2">
               <div>
-                <label style="margin-top:0;">Monto ($ USD)</label>
-                <input type="number" step="0.5" id="modLvlAmt_${idx}" value="${amt}">
+                <label>Monto ($ USD)</label>
+                <input type="number" step="0.01" class="mod-lvl-amt" value="${amt}">
               </div>
               <div>
-                <label style="margin-top:0;">Interés (%)</label>
-                <input type="number" step="0.5" id="modLvlPct_${idx}" value="${pct}">
+                <label>Interés (%)</label>
+                <input type="number" step="0.5" class="mod-lvl-pct" value="${pct}">
               </div>
             </div>
             <div class="grid-2">
               <div>
                 <label>Cuotas máx.</label>
-                <input type="number" min="1" max="12" id="modLvlQuotas_${idx}" value="${quotas}">
+                <input type="number" min="1" max="24" class="mod-lvl-quotas" value="${quotas}">
               </div>
               <div>
                 <label>Frecuencia</label>
-                <select id="modLvlFreq_${idx}">
+                <select class="mod-lvl-freq">
                   <option value="semanal" ${freq === "semanal" ? "selected" : ""}>Semanal (7d)</option>
                   <option value="quincenal" ${freq === "quincenal" ? "selected" : ""}>Quincenal (15d)</option>
                 </select>
@@ -531,12 +615,14 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       }).join("");
 
       bodyHtml = `
-        <h3 class="card-title">🏆 Configurar los 10 Niveles</h3>
-        <div class="alert alert-info" style="font-size:12px;">
-          Los 10 nombres quedan fijos. Edita los montos, porcentajes y cuotas y guarda abajo para blindarlos.
-        </div>
-        ${rowsHtml}
-        <button type="button" class="btn btn-primary" onclick="saveModularRuleSection('niveles')">💾 Guardar los 10 Niveles</button>
+        <h3 class="card-title">🏆 Configurar Niveles</h3>
+        <div id="modLevelsContainer">${rowsHtml}</div>
+        <button type="button" class="btn btn-secondary" style="width:100%;margin-bottom:8px;" onclick="window.agregarNivelMod()">
+          ➕ Agregar Nuevo Nivel
+        </button>
+        <button type="button" class="btn btn-primary" style="width:100%;" onclick="saveModularRuleSection('niveles')">
+          💾 Guardar Todos los Niveles
+        </button>
       `;
     } else if (activeRuleTab === "tasa_bcv") {
       bodyHtml = `
@@ -1032,6 +1118,8 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     if (!u) return;
 
     let card = document.getElementById("cliEditPayMethodCard");
+    if (card && card.contains(document.activeElement)) return;
+
     if (!card) {
       card = document.createElement("div");
       card.id = "cliEditPayMethodCard";
@@ -1496,8 +1584,8 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       window.CC.refreshUI = wrappedRefresh;
     }
 
-    // Blindaje anti-borrado total (10 niveles, Pago Móvil, UBII, Telegram, etc.)
-    const nivelesIncompletos = !Array.isArray(c.levels) || c.levels.length < 10 || Number(c.levels[0]?.amount || 0) <= 0;
+    // Blindaje anti-borrado total (niveles, Pago Móvil, UBII, Telegram, etc.)
+    const nivelesIncompletos = !Array.isArray(c.levels) || c.levels.length === 0 || Number(c.levels[0]?.amount || 0) <= 0;
     const datosFaltantes = !c.ownerPm || !c.ownerUbii || !c.tgBotToken || !c.tgOwnerChatId;
 
     if (!restaurandoCfg && (nivelesIncompletos || datosFaltantes)) {
@@ -1506,7 +1594,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         const snap = await getDoc(doc(db, "credicupo", "backup_config"));
         if (snap.exists()) {
           const bkp = snap.data();
-          if (bkp.ownerPm || bkp.ownerUbii || bkp.tgBotToken || (Array.isArray(bkp.levels) && bkp.levels.length === 10)) {
+          if (bkp.ownerPm || bkp.ownerUbii || bkp.tgBotToken || (Array.isArray(bkp.levels) && bkp.levels.length > 0)) {
             const { updatedAt, rate, ...restaurado } = bkp;
             const cfgFinal = {
               ...c,
@@ -1822,7 +1910,14 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     }
   }
 
-  const obs = new MutationObserver(() => syncAllExtraFeatures());
+  // Solo observar cambios fuera del panel de reglas para no interrumpir la escritura
+  const obs = new MutationObserver((mutations) => {
+    const wrap = document.getElementById("modularRulesWrapper");
+    if (wrap && wrap.contains(document.activeElement)) return;
+    const soloDentroDeReglas = mutations.every(m => wrap && wrap.contains(m.target));
+    if (soloDentroDeReglas) return;
+    syncAllExtraFeatures();
+  });
   obs.observe(document.body, { childList: true, subtree: true });
-  setInterval(syncAllExtraFeatures, 800);
+  setInterval(syncAllExtraFeatures, 1000);
 })();
