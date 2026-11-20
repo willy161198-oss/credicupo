@@ -1,6 +1,6 @@
 // ============================================================
 // MÓDULO ÚNICO Y DEFINITIVO - CREDICUPO EXPRESS
-// Teclado Estable (Sin cierre al escribir) + Niveles Editables + Blindaje Total
+// Niveles con lvl reparado + Teclado Estable + Blindaje Total
 // ============================================================
 import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -43,7 +43,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     if (!window.CC || !window.CC.state) return null;
     const cfg = window.CC.state.cfg || {};
     const levels = Array.isArray(cfg.levels) ? cfg.levels : [];
-    const r = (window.CC.getLevelRule ? window.CC.getLevelRule(lvl) : levels[lvl - 1]) || {};
+    const r = levels.find(item => Number(item?.lvl || item?.level) === Number(lvl)) || levels[lvl - 1] || {};
 
     const candidatos = [r.pct, r.interest, r.rate, r.int, r.porcentaje, r.ganancia, cfg.interest, cfg.pct];
     let interest = 0;
@@ -57,6 +57,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     if (interest <= 0) interest = 23;
 
     return {
+      lvl,
       level: lvl,
       name: r.name || NOMBRES_10_NIVELES[lvl - 1] || `Nivel ${lvl}`,
       amount: Number(r.amount) || 0,
@@ -405,6 +406,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
           const quotas = Number(card.querySelector(".mod-lvl-quotas")?.value || 1);
           const freq = card.querySelector(".mod-lvl-freq")?.value || "semanal";
           nuevosNiveles.push({
+            lvl: idx + 1,
             level: idx + 1,
             name,
             amount,
@@ -453,7 +455,6 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     const cfgPane = document.getElementById("admPaneCfg");
     if (!cfgPane || cfgPane.classList.contains("hidden")) return;
 
-    // NUNCA tocar ni reconstruir el panel mientras el usuario esté escribiendo o tenga un campo enfocado
     const existingWrap = document.getElementById("modularRulesWrapper");
     if (existingWrap && existingWrap.contains(document.activeElement)) {
       return;
@@ -465,7 +466,6 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       }
     });
 
-    // Si el contenedor ya existe para esta pestaña y no se forzó reconstrucción, NO tocarlo
     if (existingWrap && !forceRebuild && existingWrap.dataset.renderedTab === activeRuleTab) {
       return;
     }
@@ -562,6 +562,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       const levelsArr = (Array.isArray(c.levels) && c.levels.length > 0)
         ? c.levels
         : NOMBRES_10_NIVELES.map((n, i) => ({
+            lvl: i + 1,
             level: i + 1,
             name: n,
             amount: i === 0 ? 1 : (i + 1) * 5,
@@ -1572,6 +1573,18 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     const { db, state, showToast } = window.CC;
     const c = state.cfg;
 
+    // Reparar automáticamente la propiedad lvl en niveles si falta
+    if (Array.isArray(c.levels) && c.levels.some(item => item && !item.lvl)) {
+      const reparados = c.levels.map((item, idx) => ({
+        ...item,
+        lvl: idx + 1,
+        level: idx + 1,
+        pct: Number(item.pct ?? item.interest ?? 23),
+        interest: Number(item.pct ?? item.interest ?? 23)
+      }));
+      guardarParcialBlindado({ levels: reparados }).catch(() => {});
+    }
+
     if (typeof window.CC.refreshUI === "function" && !window.CC.refreshUI._gananciaWrapped) {
       const origRefresh = window.CC.refreshUI;
       const wrappedRefresh = function (...args) {
@@ -1596,6 +1609,13 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
           const bkp = snap.data();
           if (bkp.ownerPm || bkp.ownerUbii || bkp.tgBotToken || (Array.isArray(bkp.levels) && bkp.levels.length > 0)) {
             const { updatedAt, rate, ...restaurado } = bkp;
+            if (Array.isArray(restaurado.levels)) {
+              restaurado.levels = restaurado.levels.map((item, idx) => ({
+                ...item,
+                lvl: idx + 1,
+                level: idx + 1
+              }));
+            }
             const cfgFinal = {
               ...c,
               ...restaurado,
