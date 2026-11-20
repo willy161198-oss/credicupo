@@ -1,6 +1,6 @@
 // ============================================================
 // MÓDULO ÚNICO Y DEFINITIVO - CREDICUPO EXPRESS
-// Cada botón estrictamente a lo suyo (sin subbotones de salto)
+// Menú fijo debajo de la tarjeta azul + Cada botón a lo suyo
 // ============================================================
 import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -300,7 +300,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   }
 
   // ------------------------------------------------------------
-  // C. MENÚ MODULAR EN VISTA DEL CLIENTE (CADA BOTÓN A LO SUYO)
+  // C. MENÚ MODULAR EN VISTA DEL CLIENTE (ANCLADO DEBAJO DEL HERO)
   // ------------------------------------------------------------
   function setHiddenSafe(el, shouldHide) {
     if (!el) return;
@@ -309,6 +309,23 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     } else {
       if (el.classList.contains("hidden")) el.classList.remove("hidden");
     }
+  }
+
+  function findClientHeroCard(viewClient) {
+    // Buscar específicamente la tarjeta azul de bienvenida ("Hola, ..." / "Tasa BCV hoy")
+    const candidates = Array.from(viewClient.children).filter(el =>
+      el.id !== "clientModularNavCard" &&
+      el.id !== "cliActiveLoanBox" &&
+      el.id !== "cliRequestLoanBox" &&
+      el.id !== "cliExtraParallelCard" &&
+      el.id !== "cliEditPayMethodCard" &&
+      el.id !== "cliModularHelperCard"
+    );
+    const byText = candidates.find(el =>
+      (el.textContent || "").includes("Tasa BCV hoy") ||
+      (el.textContent || "").includes("Progreso para subir de nivel")
+    );
+    return byText || viewClient.querySelector(".hero-card") || candidates[0] || null;
   }
 
   window.selectClientMenuTab = (tabKey) => {
@@ -339,19 +356,22 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       activeClientTab = (activeLoans.length > 0 || hasPending) ? "paga_cuota" : "pedir_credito";
     }
 
-    // 1. Barra de 7 botones debajo de la tarjeta azul
+    // 1. Mantener la barra de 7 botones SIEMPRE justo debajo de la tarjeta azul del cupo
     let navWrap = document.getElementById("clientModularNavCard");
-    const heroCard = viewClient.querySelector(".hero-card, .card");
     if (!navWrap) {
       navWrap = document.createElement("div");
       navWrap.id = "clientModularNavCard";
       navWrap.className = "card";
       navWrap.style.padding = "12px";
-      if (heroCard && heroCard.nextSibling) {
+    }
+
+    const heroCard = findClientHeroCard(viewClient);
+    if (heroCard) {
+      if (heroCard.nextElementSibling !== navWrap) {
         viewClient.insertBefore(navWrap, heroCard.nextSibling);
-      } else {
-        viewClient.appendChild(navWrap);
       }
+    } else if (viewClient.firstElementChild !== navWrap) {
+      viewClient.insertBefore(navWrap, viewClient.firstElementChild);
     }
 
     const navSig = `${activeClientTab}|${activeLoans.length}|${hasPending ? 1 : 0}`;
@@ -432,7 +452,6 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
 
     if (showLevels && levelsCard) {
       setHiddenSafe(document.getElementById("cliLevelsList"), false);
-      // Ocultar el botón interno "Ver / Ocultar" para que la lista salga limpia directo
       levelsCard.querySelectorAll("button").forEach(btn => {
         if (/ver|ocultar/i.test(btn.textContent || "")) {
           setHiddenSafe(btn, true);
@@ -451,7 +470,6 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
 
     setHiddenSafe(infoHelperCard, !needsHelper);
 
-    // Cada botón muestra exclusivamente su contenido o su aviso limpio, sin subbotones de salto
     if (needsHelper) {
       const helperSig = `${activeClientTab}|${activeLoans.length}|${hasPending ? 1 : 0}|${state.cfg?.termsText || ""}`;
       if (force || infoHelperCard.dataset.helperSig !== helperSig) {
