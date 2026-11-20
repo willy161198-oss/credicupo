@@ -1,6 +1,6 @@
 // ============================================================
 // MÓDULO ÚNICO Y DEFINITIVO - CREDICUPO EXPRESS
-// Sin bucle de observer + Menú Modular Cliente y Dueño + Blindaje
+// Cada botón estrictamente a lo suyo (sin subbotones de salto)
 // ============================================================
 import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -300,7 +300,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   }
 
   // ------------------------------------------------------------
-  // C. MENÚ MODULAR EN VISTA DEL CLIENTE (SIN BUCLE DE DOM)
+  // C. MENÚ MODULAR EN VISTA DEL CLIENTE (CADA BOTÓN A LO SUYO)
   // ------------------------------------------------------------
   function setHiddenSafe(el, shouldHide) {
     if (!el) return;
@@ -430,8 +430,14 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     setHiddenSafe(levelsCard, !showLevels);
     setHiddenSafe(histCard, !showHist);
 
-    if (showLevels) {
+    if (showLevels && levelsCard) {
       setHiddenSafe(document.getElementById("cliLevelsList"), false);
+      // Ocultar el botón interno "Ver / Ocultar" para que la lista salga limpia directo
+      levelsCard.querySelectorAll("button").forEach(btn => {
+        if (/ver|ocultar/i.test(btn.textContent || "")) {
+          setHiddenSafe(btn, true);
+        }
+      });
     }
     if (showExtra) {
       setHiddenSafe(document.getElementById("extraParallelForm"), false);
@@ -445,6 +451,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
 
     setHiddenSafe(infoHelperCard, !needsHelper);
 
+    // Cada botón muestra exclusivamente su contenido o su aviso limpio, sin subbotones de salto
     if (needsHelper) {
       const helperSig = `${activeClientTab}|${activeLoans.length}|${hasPending ? 1 : 0}|${state.cfg?.termsText || ""}`;
       if (force || infoHelperCard.dataset.helperSig !== helperSig) {
@@ -452,37 +459,29 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         if (activeClientTab === "pedir_credito") {
           infoHelperCard.innerHTML = `
             <h3 class="card-title">💸 Solicitud de Crédito Principal</h3>
-            <div class="alert alert-info" style="margin-bottom:8px;font-size:12px;">
+            <div class="alert alert-info" style="margin-bottom:0;font-size:12px;">
               ${hasPending
-                ? "⏳ Ya tienes una solicitud en revisión. Apenas el dueño la apruebe podrás verla en <strong>Paga tu cuota</strong>."
-                : "✅ Ya tienes un crédito principal activo. Puedes pagarlo en <strong>Paga tu cuota</strong> o pedir un segundo préstamo en <strong>Pedir otro crédito</strong>."}
-            </div>
-            <div class="grid-2">
-              <button type="button" class="btn btn-primary" style="margin-top:0;" onclick="selectClientMenuTab('paga_cuota')">Ir a Paga tu cuota</button>
-              <button type="button" class="btn btn-secondary" style="margin-top:0;" onclick="selectClientMenuTab('pedir_otro')">Pedir otro crédito</button>
+                ? "⏳ Ya tienes una solicitud principal en revisión por el administrador."
+                : "✅ Ya tienes un crédito principal activo en curso."}
             </div>
           `;
         } else if (activeClientTab === "paga_cuota") {
           infoHelperCard.innerHTML = `
             <h3 class="card-title">💳 Paga tu Cuota</h3>
-            <div class="alert alert-info" style="margin-bottom:8px;font-size:12px;">
+            <div class="alert alert-info" style="margin-bottom:0;font-size:12px;">
               No tienes cuotas pendientes por pagar en este momento.
             </div>
-            <button type="button" class="btn btn-primary" onclick="selectClientMenuTab('pedir_credito')">Solicitar un Crédito Ahora</button>
           `;
         } else if (activeClientTab === "pedir_otro") {
-          let msg = "Para pedir un crédito adicional debes tener primero tu crédito principal activo.";
+          let msg = "Para solicitar un crédito adicional debes tener primero tu crédito principal activo.";
           if (activeLoans.length >= 2) {
-            msg = "⛔ Ya tienes activos tu crédito principal y tu crédito adicional (máximo 2 créditos simultáneos).";
+            msg = "⛔ Ya alcanzaste el límite máximo de 2 créditos activos simultáneos.";
           } else if (hasPending) {
-            msg = "⏳ Ya tienes una solicitud pendiente en revisión por el dueño.";
+            msg = "⏳ Ya tienes una solicitud pendiente en revisión por el administrador.";
           }
           infoHelperCard.innerHTML = `
             <h3 class="card-title">➕ Pedir Otro Crédito</h3>
-            <div class="alert alert-warn" style="margin-bottom:8px;font-size:12px;">${msg}</div>
-            <button type="button" class="btn btn-primary" onclick="selectClientMenuTab('${activeLoans.length === 0 ? "pedir_credito" : "paga_cuota"}')">
-              ${activeLoans.length === 0 ? "Pedir Crédito Principal" : "Ver Mis Cuotas"}
-            </button>
+            <div class="alert alert-warn" style="margin-bottom:0;font-size:12px;">${msg}</div>
           `;
         } else if (activeClientTab === "terminos") {
           const terms = (state.cfg?.termsText || "Al solicitar un crédito en CrediCupo Express aceptas pagar tus cuotas puntualmente en las fechas acordadas.").trim();
@@ -2138,6 +2137,5 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     }
   }
 
-  // Solo sincronizar cada 1.2s y nunca re-disparar por cambios propios del DOM
   setInterval(syncAllExtraFeatures, 1200);
 })();
