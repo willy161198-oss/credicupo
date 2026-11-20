@@ -1,5 +1,6 @@
 // ============================================================
-// MÓDULO COMPLETO UNIFICADO - CREDICUPO EXPRESS (DEFINITIVO)
+// MÓDULO ÚNICO Y DEFINITIVO - CREDICUPO EXPRESS
+// Panel Modular en "Editar Reglas" + Blindaje Total 10 Niveles
 // ============================================================
 import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -10,9 +11,15 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   let clientKnownSig = null;
   let selectedActiveLoanId = null;
   let restaurandoCfg = false;
+  let activeRuleTab = "datos_app";
+
+  const NOMBRES_10_NIVELES = [
+    "Burusa", "Basurita", "Piedrita", "Grava", "Cerro",
+    "Roca", "Cantera", "Montaña", "Cordillera", "Everest"
+  ];
 
   // ------------------------------------------------------------
-  // 0. COPIAR CON UN TOQUE Y LECTURA DE REGLA REAL
+  // 0. UTILIDADES: COPIAR, REGLA REAL Y RESPALDO BLINDADO TOTAL
   // ------------------------------------------------------------
   window.ccCopyText = async (txt, label) => {
     const clean = String(txt || "").trim();
@@ -47,27 +54,31 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         break;
       }
     }
-    if (interest <= 0) {
-      for (const [k, v] of Object.entries(r)) {
-        if (!["amount", "quotas", "level", "id", "days"].includes(k)) {
-          const n = Number(v);
-          if (!isNaN(n) && n > 0 && n <= 200) {
-            interest = n;
-            break;
-          }
-        }
-      }
-    }
     if (interest <= 0) interest = 23;
 
     return {
       level: lvl,
-      name: r.name || `Nivel ${lvl}`,
+      name: r.name || NOMBRES_10_NIVELES[lvl - 1] || `Nivel ${lvl}`,
       amount: Number(r.amount) || 0,
       interest,
       quotas: Number(r.quotas) || 1,
       freq: r.freq || "semanal"
     };
+  }
+
+  async function guardarParcialBlindado(parcheObj) {
+    if (!window.CC || !window.CC.db || !window.CC.state) return;
+    const { db, state } = window.CC;
+    const cfgActualizado = { ...(state.cfg || {}), ...parcheObj };
+    state.cfg = cfgActualizado;
+
+    await setDoc(doc(db, "credicupo", "config"), cfgActualizado, { merge: true });
+
+    const { rate, ...datosFijos } = cfgActualizado;
+    await setDoc(doc(db, "credicupo", "backup_config"), {
+      ...datosFijos,
+      updatedAt: Date.now()
+    }, { merge: true });
   }
 
   // ------------------------------------------------------------
@@ -144,7 +155,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   }
 
   // ------------------------------------------------------------
-  // B. MÉTODOS DE COBRO DEL CLIENTE EN REGISTRO (BVC, UBII, PM, BINANCE)
+  // B. MÉTODOS DE COBRO DEL CLIENTE EN REGISTRO
   // ------------------------------------------------------------
   const bankSel = document.getElementById("regBank");
   if (bankSel && !Array.from(bankSel.options).some(o => o.value === "Venezolano de Crédito (0104)")) {
@@ -285,7 +296,310 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   }
 
   // ------------------------------------------------------------
-  // C. MODAL PARA QUE EL DUEÑO SUBA CAPTURE Y COPIE DATOS AL APROBAR
+  // C. PANEL MODULAR EN "EDITAR REGLAS" (CADA OPCIÓN CON SU GUARDAR)
+  // ------------------------------------------------------------
+  window.selectRuleSection = (secKey) => {
+    activeRuleTab = secKey;
+    renderModularRulesPanel(true);
+  };
+
+  window.saveModularRuleSection = async (secKey) => {
+    if (!window.CC || !window.CC.state) return;
+    const { state, showToast } = window.CC;
+    const c = state.cfg || {};
+
+    try {
+      if (secKey === "datos_app") {
+        const appName = (document.getElementById("modAppName")?.value || c.appName || "CrediCupo Express").trim();
+        const adminPin = (document.getElementById("modAdminPin")?.value || c.adminPin || "").trim();
+        if (!adminPin || adminPin.length < 4) return showToast("El Código Maestro debe tener al menos 4 dígitos");
+        await guardarParcialBlindado({ appName, adminPin });
+        showToast("✅ Datos de la app guardados");
+      } else if (secKey === "ajustes_gen") {
+        const lateFeePct = Number(document.getElementById("modLateFee")?.value ?? c.lateFeePct ?? 5);
+        const graceDays = Number(document.getElementById("modGraceDays")?.value ?? c.graceDays ?? 1);
+        await guardarParcialBlindado({ lateFeePct, graceDays });
+        showToast("✅ Ajustes generales guardados");
+      } else if (secKey === "pago_movil") {
+        const ownerPm = (document.getElementById("modOwnerPm")?.value || "").trim();
+        if (!ownerPm) return showToast("Escribe los datos de tu Pago Móvil");
+        await guardarParcialBlindado({ ownerPm });
+        showToast("✅ Pago Móvil guardado y blindado");
+      } else if (secKey === "ubii_pagos") {
+        const ownerUbii = (document.getElementById("modOwnerUbii")?.value || "").trim();
+        await guardarParcialBlindado({ ownerUbii });
+        showToast("✅ UBII PAGO guardado y blindado");
+      } else if (secKey === "prorroga") {
+        const extDailyPct = Number(document.getElementById("modExtDailyPct")?.value ?? 4);
+        await guardarParcialBlindado({ extDailyPct });
+        showToast("✅ % de prórroga guardado");
+      } else if (secKey === "notificaciones") {
+        if ("Notification" in window && Notification.permission === "default") {
+          try { await Notification.requestPermission(); } catch (e) {}
+        }
+        const tgBotToken = (document.getElementById("modTgToken")?.value || "").trim();
+        const tgOwnerChatId = (document.getElementById("modTgChatId")?.value || "").trim();
+        await guardarParcialBlindado({ tgBotToken, tgOwnerChatId });
+        showToast("✅ Notificaciones guardadas y blindadas");
+      } else if (secKey === "niveles") {
+        const nuevosNiveles = [];
+        for (let i = 0; i < 10; i++) {
+          const nombreFijo = NOMBRES_10_NIVELES[i];
+          const amount = Number(document.getElementById(`modLvlAmt_${i}`)?.value || 0);
+          const pct = Number(document.getElementById(`modLvlPct_${i}`)?.value || 23);
+          const quotas = Number(document.getElementById(`modLvlQuotas_${i}`)?.value || 1);
+          const freq = document.getElementById(`modLvlFreq_${i}`)?.value || "semanal";
+          nuevosNiveles.push({
+            level: i + 1,
+            name: nombreFijo,
+            amount,
+            pct,
+            interest: pct,
+            quotas,
+            freq
+          });
+        }
+        await guardarParcialBlindado({ levels: nuevosNiveles });
+        showToast("✅ Los 10 niveles guardados y blindados");
+      } else if (secKey === "tasa_bcv") {
+        const rate = Number(document.getElementById("modBcvRate")?.value || 0);
+        if (rate <= 0) return showToast("Ingresa una tasa BCV válida");
+        await guardarParcialBlindado({ rate });
+        showToast(`✅ Tasa BCV actualizada a Bs. ${rate.toFixed(2)}`);
+      } else if (secKey === "whatsapp") {
+        const ownerWa = (document.getElementById("modOwnerWa")?.value || "").replace(/\D/g, "");
+        await guardarParcialBlindado({ ownerWa });
+        showToast("✅ WhatsApp de soporte guardado");
+      } else if (secKey === "cupos") {
+        const dailyLimit = Number(document.getElementById("modDailyLimit")?.value || 3);
+        const loansPerLevel = Number(document.getElementById("modLoansPerLevel")?.value || 5);
+        await guardarParcialBlindado({ dailyLimit, loansPerLevel });
+        showToast("✅ Reglas de cupos guardadas");
+      } else if (secKey === "capital") {
+        const initialCapital = Number(document.getElementById("modCapital")?.value || 0);
+        await guardarParcialBlindado({ initialCapital });
+        showToast("✅ Capital base guardado");
+      } else if (secKey === "terminos") {
+        const termsText = (document.getElementById("modTermsText")?.value || "").trim();
+        await guardarParcialBlindado({ termsText });
+        showToast("✅ Términos y condiciones guardados");
+      }
+    } catch (e) {
+      showToast("⚠️ Error al guardar, revisa tu conexión");
+    }
+  };
+
+  function renderModularRulesPanel(forceRebuild = false) {
+    if (!window.CC || !window.CC.state || !window.CC.state.isAdmin) return;
+    const cfgPane = document.getElementById("admPaneCfg");
+    if (!cfgPane || cfgPane.classList.contains("hidden")) return;
+
+    // Ocultar el formulario antiguo largo para que no estorbe ni pise datos
+    Array.from(cfgPane.children).forEach(ch => {
+      if (ch.id !== "modularRulesWrapper") ch.classList.add("hidden");
+    });
+
+    let wrap = document.getElementById("modularRulesWrapper");
+    if (!wrap) {
+      wrap = document.createElement("div");
+      wrap.id = "modularRulesWrapper";
+      wrap.className = "card";
+      cfgPane.appendChild(wrap);
+    }
+
+    if (!forceRebuild && wrap.dataset.renderedTab === activeRuleTab) return;
+    wrap.dataset.renderedTab = activeRuleTab;
+
+    const c = window.CC.state.cfg || {};
+    const botones = [
+      ["datos_app", "Datos de la app"],
+      ["ajustes_gen", "Ajustes generales"],
+      ["pago_movil", "Pago móvil"],
+      ["ubii_pagos", "Ubii pagos"],
+      ["prorroga", "% prórroga"],
+      ["notificaciones", "Notificaciones"],
+      ["niveles", "Niveles"],
+      ["tasa_bcv", "Tasa BCV"],
+      ["whatsapp", "WhatsApp"],
+      ["cupos", "Cupos"],
+      ["capital", "Capital"],
+      ["terminos", "Términos y condiciones"]
+    ];
+
+    const gridBtnsHtml = botones.map(([key, label]) => {
+      const activo = activeRuleTab === key;
+      const fullWidth = key === "terminos" ? "grid-column: 1 / -1;" : "";
+      return `
+        <button type="button" onclick="selectRuleSection('${key}')"
+          style="${fullWidth}padding:10px 8px;border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;border:1px solid ${activo ? "#00875A" : "#CBD5E1"};background:${activo ? "#00875A" : "#111827"};color:#FFFFFF;box-shadow:0 2px 4px rgba(0,0,0,0.08);">
+          ${label}
+        </button>
+      `;
+    }).join("");
+
+    let bodyHtml = "";
+
+    if (activeRuleTab === "datos_app") {
+      bodyHtml = `
+        <h3 class="card-title">📱 Datos de la App</h3>
+        <label>Nombre de la aplicación</label>
+        <input type="text" id="modAppName" value="${c.appName || "CrediCupo Express"}">
+        <label>Código Maestro de Dueño (PIN)</label>
+        <input type="text" id="modAdminPin" value="${c.adminPin || ""}">
+        <button type="button" class="btn btn-primary" onclick="saveModularRuleSection('datos_app')">💾 Guardar Datos de la App</button>
+      `;
+    } else if (activeRuleTab === "ajustes_gen") {
+      bodyHtml = `
+        <h3 class="card-title">⚙️ Ajustes Generales</h3>
+        <label>Mora por atraso (%)</label>
+        <input type="number" step="0.5" id="modLateFee" value="${c.lateFeePct ?? 5}">
+        <label>Días de gracia antes de mora</label>
+        <input type="number" id="modGraceDays" value="${c.graceDays ?? 1}">
+        <button type="button" class="btn btn-primary" onclick="saveModularRuleSection('ajustes_gen')">💾 Guardar Ajustes Generales</button>
+      `;
+    } else if (activeRuleTab === "pago_movil") {
+      bodyHtml = `
+        <h3 class="card-title">🏦 Pago Móvil del Dueño</h3>
+        <label>Banco • Cédula • Teléfono</label>
+        <input type="text" id="modOwnerPm" value="${c.ownerPm || ""}" placeholder="BDV (0102) • V-26417372 • 04126985783">
+        <button type="button" class="btn btn-primary" onclick="saveModularRuleSection('pago_movil')">💾 Guardar Pago Móvil</button>
+      `;
+    } else if (activeRuleTab === "ubii_pagos") {
+      bodyHtml = `
+        <h3 class="card-title">📲 UBII PAGO del Dueño</h3>
+        <label>Correo o Teléfono registrado en UBII PAGO</label>
+        <input type="text" id="modOwnerUbii" value="${c.ownerUbii || ""}" placeholder="willy161198@gmail.com">
+        <button type="button" class="btn btn-primary" onclick="saveModularRuleSection('ubii_pagos')">💾 Guardar UBII PAGO</button>
+      `;
+    } else if (activeRuleTab === "prorroga") {
+      bodyHtml = `
+        <h3 class="card-title">⏳ Porcentaje de Prórroga</h3>
+        <label>Recargo por cada día de prórroga (% diario, máx. 5 días)</label>
+        <input type="number" step="0.5" id="modExtDailyPct" value="${c.extDailyPct ?? 4}">
+        <button type="button" class="btn btn-primary" onclick="saveModularRuleSection('prorroga')">💾 Guardar % de Prórroga</button>
+      `;
+    } else if (activeRuleTab === "notificaciones") {
+      bodyHtml = `
+        <h3 class="card-title">🔔 Notificaciones Tipo Cashea</h3>
+        <label>Token del Bot (@BotFather)</label>
+        <input type="text" id="modTgToken" value="${c.tgBotToken || ""}" placeholder="9100956059:AAG...">
+        <label>Tu Chat ID de Telegram (@userinfobot)</label>
+        <input type="tel" id="modTgChatId" value="${c.tgOwnerChatId || ""}" placeholder="8851780047">
+        <div class="grid-2" style="margin-top:8px;">
+          <button type="button" class="btn btn-primary" style="margin-top:0;" onclick="saveModularRuleSection('notificaciones')">💾 Guardar Alertas</button>
+          <button type="button" class="btn btn-secondary" style="margin-top:0;" onclick="testTgNotif()">🔔 Probar Alerta</button>
+        </div>
+      `;
+    } else if (activeRuleTab === "niveles") {
+      const levelsArr = Array.isArray(c.levels) ? c.levels : [];
+      const rowsHtml = NOMBRES_10_NIVELES.map((nombreNivel, idx) => {
+        const lvlObj = levelsArr[idx] || {};
+        const amt = lvlObj.amount ?? (idx === 0 ? 1 : (idx + 1) * 5);
+        const pct = lvlObj.pct ?? lvlObj.interest ?? 23;
+        const quotas = lvlObj.quotas ?? (idx < 2 ? 1 : 2);
+        const freq = lvlObj.freq || "semanal";
+        return `
+          <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:10px;padding:10px;margin-bottom:8px;">
+            <div style="font-weight:800;font-size:13px;color:#0F172A;margin-bottom:6px;">
+              Nivel ${idx + 1}: <span style="color:#00875A;">${nombreNivel}</span> <span style="font-size:11px;color:#64748B;">(Nombre fijo)</span>
+            </div>
+            <div class="grid-2">
+              <div>
+                <label style="margin-top:0;">Monto ($ USD)</label>
+                <input type="number" step="0.5" id="modLvlAmt_${idx}" value="${amt}">
+              </div>
+              <div>
+                <label style="margin-top:0;">Interés (%)</label>
+                <input type="number" step="0.5" id="modLvlPct_${idx}" value="${pct}">
+              </div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <label>Cuotas máx.</label>
+                <input type="number" min="1" max="12" id="modLvlQuotas_${idx}" value="${quotas}">
+              </div>
+              <div>
+                <label>Frecuencia</label>
+                <select id="modLvlFreq_${idx}">
+                  <option value="semanal" ${freq === "semanal" ? "selected" : ""}>Semanal (7d)</option>
+                  <option value="quincenal" ${freq === "quincenal" ? "selected" : ""}>Quincenal (15d)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      bodyHtml = `
+        <h3 class="card-title">🏆 Configurar los 10 Niveles</h3>
+        <div class="alert alert-info" style="font-size:12px;">
+          Los 10 nombres quedan fijos. Edita los montos, porcentajes y cuotas y guarda abajo para blindarlos.
+        </div>
+        ${rowsHtml}
+        <button type="button" class="btn btn-primary" onclick="saveModularRuleSection('niveles')">💾 Guardar los 10 Niveles</button>
+      `;
+    } else if (activeRuleTab === "tasa_bcv") {
+      bodyHtml = `
+        <h3 class="card-title">💵 Tasa BCV (Bs. por $1 USD)</h3>
+        <label>Tasa actual en Bolívares</label>
+        <input type="number" step="0.01" id="modBcvRate" value="${c.rate || ""}">
+        <button type="button" class="btn btn-primary" onclick="saveModularRuleSection('tasa_bcv')">💾 Guardar Tasa BCV</button>
+      `;
+    } else if (activeRuleTab === "whatsapp") {
+      bodyHtml = `
+        <h3 class="card-title">💬 WhatsApp de Soporte</h3>
+        <label>Número con código de país (ej: 584126985783)</label>
+        <input type="tel" id="modOwnerWa" value="${c.ownerWa || ""}" placeholder="584126985783">
+        <button type="button" class="btn btn-primary" onclick="saveModularRuleSection('whatsapp')">💾 Guardar WhatsApp</button>
+      `;
+    } else if (activeRuleTab === "cupos") {
+      bodyHtml = `
+        <h3 class="card-title">📊 Reglas de Cupos y Progreso</h3>
+        <label>Máximo de solicitudes diarias por cliente</label>
+        <input type="number" min="1" id="modDailyLimit" value="${c.dailyLimit ?? 3}">
+        <label>Préstamos pagados para subir de nivel</label>
+        <input type="number" min="1" id="modLoansPerLevel" value="${c.loansPerLevel ?? 5}">
+        <button type="button" class="btn btn-primary" onclick="saveModularRuleSection('cupos')">💾 Guardar Cupos</button>
+      `;
+    } else if (activeRuleTab === "capital") {
+      bodyHtml = `
+        <h3 class="card-title">💰 Capital Base</h3>
+        <label>Capital inicial disponible ($ USD)</label>
+        <input type="number" step="0.01" id="modCapital" value="${c.initialCapital ?? 50}">
+        <button type="button" class="btn btn-primary" onclick="saveModularRuleSection('capital')">💾 Guardar Capital</button>
+      `;
+    } else if (activeRuleTab === "terminos") {
+      bodyHtml = `
+        <h3 class="card-title">📜 Términos y Condiciones</h3>
+        <label>Texto visible para los clientes al registrarse o pedir crédito</label>
+        <textarea id="modTermsText" rows="5" style="width:100%;border-radius:10px;border:1px solid #CBD5E1;padding:10px;font-size:13px;">${c.termsText || "Al solicitar un crédito en CrediCupo Express aceptas pagar tus cuotas puntualmente en las fechas acordadas."}</textarea>
+        <button type="button" class="btn btn-primary" onclick="saveModularRuleSection('terminos')">💾 Guardar Términos y Condiciones</button>
+      `;
+    }
+
+    wrap.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
+        ${gridBtnsHtml}
+      </div>
+      <div style="border-top:1px solid #E2E8F0;padding-top:12px;">
+        ${bodyHtml}
+      </div>
+    `;
+  }
+
+  window.testTgNotif = async () => {
+    if ("Notification" in window && Notification.permission === "default") {
+      try { await Notification.requestPermission(); } catch (e) {}
+    }
+    playChime();
+    const title = "Has recibido un pago de prueba 💸✅";
+    const body = "¡Qué bien! Así avisará CrediCupo Express a ti y a tus clientes.";
+    await window.sendOwnerTelegramAlert(`<b>${title}</b>\n${body}`, title, body);
+    if (window.CC) window.CC.showToast("🔔 Alerta enviada");
+  };
+
+  // ------------------------------------------------------------
+  // D. MODAL PARA QUE EL DUEÑO SUBA CAPTURE Y COPIE DATOS AL APROBAR
   // ------------------------------------------------------------
   if (!document.getElementById("ownerDisburseModal")) {
     const modal = document.createElement("div");
@@ -443,7 +757,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   };
 
   // ------------------------------------------------------------
-  // D. NOTIFICACIONES ESTILO CASHEA PARA DUEÑO Y CLIENTE
+  // E. NOTIFICACIONES, RECHAZO DE CUOTA Y PRÓRROGAS
   // ------------------------------------------------------------
   const origRequestLoan = window.requestLoan;
   if (origRequestLoan && !origRequestLoan._notifWrapped) {
@@ -498,13 +812,13 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
           await window.sendClientTelegramAlert(
             after.cedula,
             `Has completado tus pagos 🥳✅`,
-            `¡Qué bien, ${after.nombre}! Registramos el pago total de tu préstamo. Sigue disfrutando de tus cupos en CrediCupo Express.`
+            `¡Qué bien, ${after.nombre}! Registramos el pago total de tu préstamo.`
           );
         } else if (before.status !== "rechazado" && after.status === "rechazado") {
           await window.sendClientTelegramAlert(
             after.cedula,
             `Solicitud no aprobada ⚠️`,
-            `Hola ${after.nombre}, tu solicitud de préstamo fue rechazada o devuelta. Entra a CrediCupo Express para revisar.`
+            `Hola ${after.nombre}, tu solicitud de préstamo fue rechazada o devuelta.`
           );
         } else if (Array.isArray(after.schedule) && Array.isArray(before.schedule)) {
           after.schedule.forEach(async (qAfter, idx) => {
@@ -524,9 +838,45 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     window.executePendingPinAction = wrappedExec;
   }
 
-  // ------------------------------------------------------------
-  // E. PRÓRROGA DE 1 A 5 DÍAS CON RECARGO DIARIO EDITABLE
-  // ------------------------------------------------------------
+  window.rejectQuotaPayment = async (loanId, instNum) => {
+    if (!window.CC || !window.CC.state) return;
+    const { db, state, showToast } = window.CC;
+
+    const pin = prompt("Escribe tu Código Maestro de Dueño para rechazar este pago:");
+    if (pin !== String(state.cfg.adminPin)) {
+      return showToast("⛔ Código Maestro incorrecto");
+    }
+
+    const motivo = prompt("Motivo del rechazo:", "Seleccionaste la cuota equivocada. Vuelve a subir el capture en la cuota correcta.");
+    if (motivo === null) return;
+
+    const l = state.loans[loanId];
+    if (!l || !Array.isArray(l.schedule)) return;
+
+    const sched = l.schedule.map(q => {
+      if (Number(q.num) !== Number(instNum)) return q;
+      const limpio = { ...q, status: "pendiente" };
+      delete limpio.payRef;
+      delete limpio.payProof;
+      delete limpio.paidAt;
+      delete limpio.reportedAt;
+      return limpio;
+    });
+
+    await updateDoc(doc(db, "loans", loanId), {
+      status: "activo",
+      schedule: sched
+    });
+
+    await window.sendClientTelegramAlert(
+      l.cedula,
+      `Pago de Cuota #${instNum} rechazado ⚠️`,
+      `Hola ${l.nombre}, rechazamos el reporte de tu Cuota #${instNum} (${motivo}). Entra a CrediCupo Express y vuelve a subir el capture en la cuota correcta.`
+    );
+
+    showToast(`❌ Pago de Cuota #${instNum} rechazado y devuelto a pendiente`);
+  };
+
   window.updateExtensionPreview = () => {
     if (!window.CC) return;
     const { state } = window.CC;
@@ -620,122 +970,14 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       await window.sendClientTelegramAlert(
         l.cedula,
         `Solicitud de prórroga rechazada ⚠️`,
-        `Hola ${l.nombre}, tu solicitud de prórroga para la Cuota #${instNum} no fue aprobada. Mantén tu fecha original de pago.`
+        `Hola ${l.nombre}, tu solicitud de prórroga para la Cuota #${instNum} no fue aprobada.`
       );
       showToast("❌ Prórroga rechazada");
     }
   };
 
   // ------------------------------------------------------------
-  // F. CONFIGURACIÓN DEL DUEÑO + BLINDAJE ANTI-BORRADO (12:00 AM)
-  // ------------------------------------------------------------
-  async function guardarRespaldoBlindado(cfgObj) {
-    if (!window.CC || !window.CC.db || !cfgObj) return;
-    try {
-      const { rate, ...datosFijos } = cfgObj;
-      await setDoc(doc(window.CC.db, "credicupo", "backup_config"), {
-        ...datosFijos,
-        updatedAt: Date.now()
-      }, { merge: true });
-    } catch (e) {}
-  }
-
-  function injectAdminExtraBoxes() {
-    const cfgPane = document.querySelector("#admPaneCfg .card");
-    if (!cfgPane) return;
-    const levelsTitle = cfgPane.querySelector("h3.card-title:nth-of-type(2)");
-
-    if (!document.getElementById("extraBanksAdminBox")) {
-      const extraBox = document.createElement("div");
-      extraBox.id = "extraBanksAdminBox";
-      extraBox.style.cssText = "background:#F0FFF8;border:1px solid #B7EB8F;border-radius:10px;padding:12px;margin-top:12px;";
-      extraBox.innerHTML = `
-        <strong style="font-size:13px;color:var(--primary);display:block;margin-bottom:6px;">
-          📲 UBII PAGO y Regla de Prórroga
-        </strong>
-        <label style="margin-top:4px;">Correo o Teléfono UBII PAGO</label>
-        <input type="text" id="cfgOwnerUbii" placeholder="willy161198@gmail.com">
-        <label>Recargo por día de prórroga (% diario, máx. 5 días)</label>
-        <input type="number" step="0.5" id="cfgExtDailyPct" placeholder="4">
-        <button type="button" class="btn btn-sm btn-primary" style="margin-top:10px;width:100%;" onclick="saveExtraAllCfg()">
-          Guardar UBII y % Prórroga
-        </button>
-      `;
-      if (levelsTitle) cfgPane.insertBefore(extraBox, levelsTitle);
-      else cfgPane.appendChild(extraBox);
-    }
-
-    if (!document.getElementById("tgNotifAdminBox")) {
-      const tgBox = document.createElement("div");
-      tgBox.id = "tgNotifAdminBox";
-      tgBox.style.cssText = "background:#DEEBFF;border:1px solid #B3D4FF;border-radius:10px;padding:12px;margin-top:12px;";
-      tgBox.innerHTML = `
-        <strong style="font-size:13px;color:#0747A6;display:block;margin-bottom:6px;">
-          🔔 Notificaciones Tipo Cashea (Dueño y Clientes)
-        </strong>
-        <label style="margin-top:4px;">Token de tu Bot (@BotFather)</label>
-        <input type="text" id="cfgTgToken" placeholder="9100956059:AAG...">
-        <label>Tu Chat ID de Telegram (@userinfobot)</label>
-        <input type="tel" id="cfgTgChatId" placeholder="8851780047">
-        <div class="grid-2" style="margin-top:8px;">
-          <button type="button" class="btn btn-sm btn-primary" onclick="saveExtraAllCfg()">Guardar Alertas</button>
-          <button type="button" class="btn btn-sm btn-secondary" onclick="testTgNotif()">Probar Alerta</button>
-        </div>
-      `;
-      if (levelsTitle) cfgPane.insertBefore(tgBox, levelsTitle);
-      else cfgPane.appendChild(tgBox);
-    }
-  }
-
-  window.saveExtraAllCfg = async () => {
-    if (!window.CC) return;
-    const { db, state, showToast } = window.CC;
-    if ("Notification" in window && Notification.permission === "default") {
-      try { await Notification.requestPermission(); } catch (e) {}
-    }
-    const ownerUbii = (document.getElementById("cfgOwnerUbii")?.value || "").trim();
-    const extDailyPct = Number(document.getElementById("cfgExtDailyPct")?.value || 4);
-    const tgBotToken = (document.getElementById("cfgTgToken")?.value || "").trim();
-    const tgOwnerChatId = (document.getElementById("cfgTgChatId")?.value || "").trim();
-
-    const nuevoCfg = {
-      ...state.cfg,
-      ownerBin: "",
-      ownerBvcPm: "",
-      ownerBvcMail: "",
-      ownerUbii,
-      extDailyPct,
-      tgBotToken,
-      tgOwnerChatId
-    };
-    await setDoc(doc(db, "credicupo", "config"), nuevoCfg);
-    await guardarRespaldoBlindado(nuevoCfg);
-    showToast("✅ Ajustes guardados y blindados");
-  };
-
-  window.testTgNotif = async () => {
-    if ("Notification" in window && Notification.permission === "default") {
-      try { await Notification.requestPermission(); } catch (e) {}
-    }
-    playChime();
-    const title = "Has recibido un pago de prueba 💸✅";
-    const body = "¡Qué bien! Así avisará CrediCupo Express a ti y a tus clientes.";
-    await window.sendOwnerTelegramAlert(`<b>${title}</b>\n${body}`, title, body);
-    if (window.CC) window.CC.showToast("🔔 Alerta enviada");
-  };
-
-  const origSaveAdmin = window.saveAdminConfig;
-  if (origSaveAdmin && !origSaveAdmin._extraWrapped) {
-    const wrappedSave = async () => {
-      await origSaveAdmin();
-      await window.saveExtraAllCfg();
-    };
-    wrappedSave._extraWrapped = true;
-    window.saveAdminConfig = wrappedSave;
-  }
-
-  // ------------------------------------------------------------
-  // G. EDICIÓN DE DATOS / CUENTA DEL CLIENTE SOLO CON PERMISO DEL DUEÑO
+  // F. EDICIÓN DE DATOS / CUENTA DEL CLIENTE SOLO CON PERMISO DEL DUEÑO
   // ------------------------------------------------------------
   window.requestProfileEditPermission = async () => {
     if (!window.CC) return;
@@ -752,7 +994,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     });
 
     const title = `Permiso para editar datos 🔐`;
-    const body = `${u.nombre} (V-${u.cedula}) solicita permiso para editar: "${note}". Entra a Clientes para autorizar.`;
+    const body = `${u.nombre} (V-${u.cedula}) solicita permiso para editar: "${note}".`;
     await window.sendOwnerTelegramAlert(`<b>${title}</b>\n${body}`, title, body);
     showToast("✅ Solicitud enviada al dueño");
   };
@@ -955,7 +1197,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   };
 
   // ------------------------------------------------------------
-  // H. CRÉDITO ADICIONAL PARALELO (MÁX. 1 EXTRA + INTERÉS REAL)
+  // G. CRÉDITO ADICIONAL PARALELO (MÁX. 1 EXTRA + INTERÉS REAL)
   // ------------------------------------------------------------
   function getAvailableLevelsUpTo(maxLevel) {
     const result = [];
@@ -1069,7 +1311,61 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   };
 
   // ------------------------------------------------------------
-  // I. CUADRO LIMPIO DE PAGO + PRÓRROGAS + GANANCIA EN VIVO
+  // H. GANANCIA EN VIVO (PINTADA DIRECTO EN CADA REFRESHUI)
+  // ------------------------------------------------------------
+  function calcularGananciaTotalReal() {
+    if (!window.CC || !window.CC.state) return 0;
+    const loans = Object.values(window.CC.state.loans || {});
+    let ganancia = 0;
+
+    loans.forEach(l => {
+      if (!["activo", "pagando", "pagado"].includes(l.status)) return;
+      const prestado = Number(l.amount) || 0;
+      const totalPagar = Number(l.totalDue) || prestado;
+      const gananciaPrestamo = Math.max(0, totalPagar - prestado);
+
+      if (l.status === "pagado") {
+        ganancia += gananciaPrestamo;
+      } else if (Array.isArray(l.schedule) && totalPagar > 0) {
+        const cobrado = l.schedule
+          .filter(q => q.status === "pagada")
+          .reduce((acc, q) => acc + (Number(q.amount) || 0), 0);
+        ganancia += (cobrado / totalPagar) * gananciaPrestamo;
+      }
+    });
+
+    return ganancia;
+  }
+
+  function pintarGananciaEnPantalla() {
+    if (!window.CC || !window.CC.state || !window.CC.state.isAdmin) return;
+    const totalGanancia = calcularGananciaTotalReal();
+    const textoNuevo = `$${totalGanancia.toFixed(2)}`;
+
+    const strip = document.querySelector("#viewAdmin .summary-strip");
+    if (!strip) return;
+
+    Array.from(strip.children).forEach(box => {
+      if ((box.textContent || "").toLowerCase().includes("ganancia")) {
+        const hijos = box.querySelectorAll("*");
+        let actualizado = false;
+        hijos.forEach(el => {
+          if (el.children.length === 0 && (el.textContent || "").includes("$")) {
+            if (el.textContent.trim() !== textoNuevo) {
+              el.textContent = textoNuevo;
+            }
+            actualizado = true;
+          }
+        });
+        if (!actualizado) {
+          box.innerHTML = `<div style="font-size:11px;color:var(--muted);">Ganancia</div><div style="font-size:18px;font-weight:800;color:#00875A;">${textoNuevo}</div>`;
+        }
+      }
+    });
+  }
+
+  // ------------------------------------------------------------
+  // I. CUADRO LIMPIO DE PAGO + PRÓRROGAS + SINCRONIZACIÓN GENERAL
   // ------------------------------------------------------------
   function renderCleanClientPayBox(infoAlert, c) {
     const text = infoAlert.innerText || "";
@@ -1188,18 +1484,38 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     const { db, state, showToast } = window.CC;
     const c = state.cfg;
 
-    // Blindaje anti-borrado a las 12:00 AM
-    if (!restaurandoCfg && (!c.ownerUbii || !c.tgBotToken || !c.tgOwnerChatId || !c.ownerPm)) {
+    if (typeof window.CC.refreshUI === "function" && !window.CC.refreshUI._gananciaWrapped) {
+      const origRefresh = window.CC.refreshUI;
+      const wrappedRefresh = function (...args) {
+        const res = origRefresh.apply(this, args);
+        pintarGananciaEnPantalla();
+        renderModularRulesPanel(false);
+        return res;
+      };
+      wrappedRefresh._gananciaWrapped = true;
+      window.CC.refreshUI = wrappedRefresh;
+    }
+
+    // Blindaje anti-borrado total (10 niveles, Pago Móvil, UBII, Telegram, etc.)
+    const nivelesIncompletos = !Array.isArray(c.levels) || c.levels.length < 10 || Number(c.levels[0]?.amount || 0) <= 0;
+    const datosFaltantes = !c.ownerPm || !c.ownerUbii || !c.tgBotToken || !c.tgOwnerChatId;
+
+    if (!restaurandoCfg && (nivelesIncompletos || datosFaltantes)) {
       restaurandoCfg = true;
       try {
         const snap = await getDoc(doc(db, "credicupo", "backup_config"));
         if (snap.exists()) {
           const bkp = snap.data();
-          if (bkp.ownerUbii || bkp.tgBotToken || bkp.ownerPm) {
+          if (bkp.ownerPm || bkp.ownerUbii || bkp.tgBotToken || (Array.isArray(bkp.levels) && bkp.levels.length === 10)) {
             const { updatedAt, rate, ...restaurado } = bkp;
-            const cfgFinal = { ...c, ...restaurado, rate: c.rate || bkp.rate };
+            const cfgFinal = {
+              ...c,
+              ...restaurado,
+              rate: c.rate || bkp.rate
+            };
             await setDoc(doc(db, "credicupo", "config"), cfgFinal, { merge: true });
             state.cfg = cfgFinal;
+            renderModularRulesPanel(true);
           }
         }
       } catch (e) {} finally {
@@ -1207,10 +1523,10 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       }
     }
 
-    injectAdminExtraBoxes();
+    renderModularRulesPanel(false);
     injectClientPayEditor();
 
-    // Capturar automáticamente el Chat ID de Telegram del cliente
+    // Capturar Chat ID de Telegram del cliente
     if (state.currentUserCedula && state.users[state.currentUserCedula]) {
       const u = state.users[state.currentUserCedula];
       const currentTgId = getCurrentTelegramUserId();
@@ -1219,20 +1535,6 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         updateDoc(doc(db, "users", u.cedula), { tgChatId: currentTgId }).catch(() => {});
       }
     }
-
-    const mapInputs = [
-      ["cfgOwnerUbii", c.ownerUbii],
-      ["cfgExtDailyPct", c.extDailyPct ?? 4],
-      ["cfgTgToken", c.tgBotToken],
-      ["cfgTgChatId", c.tgOwnerChatId]
-    ];
-    mapInputs.forEach(([id, val]) => {
-      const el = document.getElementById(id);
-      if (el && document.activeElement !== el && !el.dataset.loaded) {
-        el.value = val ?? "";
-        el.dataset.loaded = "1";
-      }
-    });
 
     // Vista del Cliente
     const viewClient = document.getElementById("viewClient");
@@ -1246,7 +1548,6 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         .sort((a, b) => a.createdAt - b.createdAt);
       const hasPending = myLoans.some(l => l.status === "pendiente");
 
-      // Botones Crédito #1 / Crédito #2 sin parpadeo
       let switcher = document.getElementById("multiLoanSwitcher");
       if (actBox && !actBox.classList.contains("hidden") && activeLoans.length > 1) {
         if (!selectedActiveLoanId || !activeLoans.some(l => l.id === selectedActiveLoanId)) {
@@ -1302,7 +1603,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         }
       }
 
-      // Tarjeta de crédito adicional: SOLO cuando activeLoans.length === 1 (cero parpadeo)
+      // Tarjeta de crédito adicional: SOLO cuando activeLoans.length === 1
       let addCard = document.getElementById("cliExtraParallelCard");
       if (u && activeLoans.length === 1 && !u.blocked) {
         if (!addCard) {
@@ -1366,35 +1667,9 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       }
     }
 
-    // Ganancia en tiempo real por cuota pagada (Vista Dueño)
-    if (state.isAdmin) {
-      const allLoans = Object.values(state.loans || {});
-      let gananciaReal = 0;
-      allLoans.forEach(l => {
-        if (!["activo", "pagando", "pagado"].includes(l.status)) return;
-        const prestado = Number(l.amount) || 0;
-        const totalPagar = Number(l.totalDue) || prestado;
-        const gananciaTotal = Math.max(0, totalPagar - prestado);
-        if (l.status === "pagado") {
-          gananciaReal += gananciaTotal;
-        } else if (Array.isArray(l.schedule) && totalPagar > 0) {
-          const cobrado = l.schedule
-            .filter(q => q.status === "pagada")
-            .reduce((acc, q) => acc + (Number(q.amount) || 0), 0);
-          gananciaReal += (cobrado / totalPagar) * gananciaTotal;
-        }
-      });
+    pintarGananciaEnPantalla();
 
-      const stripCards = document.querySelectorAll("#viewAdmin .summary-strip > div");
-      if (stripCards && stripCards.length >= 3) {
-        const valEl = stripCards[2].querySelector("div:last-child, strong, span");
-        if (valEl && valEl.textContent.includes("$")) {
-          valEl.textContent = `$${gananciaReal.toFixed(2)}`;
-        }
-      }
-    }
-
-    // Vista del Dueño: Préstamos (Prórrogas pendientes + Copiar Cuenta + Ver Capture)
+    // Vista del Dueño: Préstamos
     const admPane = document.getElementById("admPaneLoans");
     if (admPane && !admPane.classList.contains("hidden")) {
       admPane.querySelectorAll(".item-box").forEach(card => {
@@ -1405,6 +1680,35 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
         const loan = state.loans[match[1]];
         if (!loan) return;
 
+        // Botón rojo ❌ Rechazar para cuotas reportadas por error
+        const cuotasEnRevision = (loan.schedule || []).filter(q =>
+          q.status !== "pagada" && (q.status === "revision" || q.status === "pagando" || q.payRef || q.payProof)
+        );
+        cuotasEnRevision.forEach(q => {
+          const btnId = `btnRejQ_${loan.id}_${q.num}`;
+          if (document.getElementById(btnId)) return;
+
+          const rows = Array.from(card.querySelectorAll("div"));
+          const targetRow = rows.find(el =>
+            el.children.length > 0 &&
+            el.innerText &&
+            el.innerText.includes(`C${q.num}/`) &&
+            !el.querySelector(`#${btnId}`)
+          );
+
+          const rejBtn = document.createElement("button");
+          rejBtn.id = btnId;
+          rejBtn.type = "button";
+          rejBtn.className = "btn btn-sm btn-danger";
+          rejBtn.style.cssText = "margin-top:4px;margin-left:4px;padding:4px 8px;font-size:11px;";
+          rejBtn.textContent = `❌ Rechazar C${q.num}`;
+          rejBtn.onclick = () => window.rejectQuotaPayment(loan.id, q.num);
+
+          if (targetRow) targetRow.appendChild(rejBtn);
+          else delBtn.parentNode.insertBefore(rejBtn, delBtn);
+        });
+
+        // Banner de prórroga pendiente
         const extQ = (loan.schedule || []).find(q => q.extStatus === "pendiente");
         let extAdminBanner = card.querySelector(".admin-ext-banner");
         if (extQ) {
@@ -1455,7 +1759,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       });
     }
 
-    // Vista del Dueño: Clientes (Botón para autorizar edición de datos/cuenta)
+    // Vista del Dueño: Clientes (Permiso de edición)
     const usersPane = document.getElementById("admPaneUsers");
     if (usersPane && !usersPane.classList.contains("hidden")) {
       usersPane.querySelectorAll(".item-box").forEach(card => {
@@ -1495,7 +1799,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       });
     }
 
-    // Alerta sonora en vivo para el dueño
+    // Alertas sonoras en vivo
     const loansArr = Object.values(state.loans || {});
     const pendCount = loansArr.filter(l => l.status === "pendiente").length;
     const revCount = loansArr.filter(l => l.status === "pagando").length;
@@ -1507,7 +1811,6 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     }
     knownSig = sig;
 
-    // Alerta sonora en vivo para el cliente
     if (state.currentUserCedula && !state.isAdmin) {
       const myLoans = loansArr.filter(l => l.cedula === state.currentUserCedula);
       const cliSig = myLoans.map(l => `${l.id}:${l.status}:${(l.schedule || []).map(q => `${q.status}-${q.extStatus || ""}`).join(",")}`).join("|");
@@ -1521,102 +1824,5 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
 
   const obs = new MutationObserver(() => syncAllExtraFeatures());
   obs.observe(document.body, { childList: true, subtree: true });
-  setInterval(syncAllExtraFeatures, 1200);
-})();
-// ============================================================
-// BOTÓN PARA RECHAZAR PAGO DE CUOTA EQUIVOCADA (PANEL DUEÑO)
-// ============================================================
-(function moduloRechazarPagoCuota() {
-  window.rejectQuotaPayment = async (loanId, instNum) => {
-    if (!window.CC || !window.CC.state) return;
-    const { db, state, showToast } = window.CC;
-
-    const pin = prompt("Escribe tu Código Maestro de Dueño para rechazar este pago:");
-    if (pin !== String(state.cfg.adminPin)) {
-      return showToast("⛔ Código Maestro incorrecto");
-    }
-
-    const motivo = prompt("Motivo del rechazo (ej: Seleccionaste la cuota equivocada):", "Seleccionaste la cuota equivocada. Por favor vuelve a reportar la cuota correcta.");
-    if (motivo === null) return;
-
-    const l = state.loans[loanId];
-    if (!l || !Array.isArray(l.schedule)) return;
-
-    const sched = l.schedule.map(q => {
-      if (Number(q.num) !== Number(instNum)) return q;
-      const limpio = { ...q, status: "pendiente" };
-      delete limpio.payRef;
-      delete limpio.payProof;
-      delete limpio.paidAt;
-      delete limpio.reportedAt;
-      return limpio;
-    });
-
-    const fs = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-    await fs.updateDoc(fs.doc(db, "loans", loanId), {
-      status: "activo",
-      schedule: sched
-    });
-
-    if (window.sendClientTelegramAlert) {
-      await window.sendClientTelegramAlert(
-        l.cedula,
-        `Pago de Cuota #${instNum} rechazado ⚠️`,
-        `Hola ${l.nombre}, rechazamos el reporte de tu Cuota #${instNum} (${motivo}). Entra a CrediCupo Express y vuelve a subir el capture en la cuota correcta.`
-      );
-    }
-
-    showToast(`❌ Pago de Cuota #${instNum} rechazado y devuelto a pendiente`);
-  };
-
-  // Inyectar botón "❌ Rechazar" en cuotas en revisión o pagando
-  setInterval(() => {
-    if (!window.CC || !window.CC.state || !window.CC.state.isAdmin) return;
-    const admPane = document.getElementById("admPaneLoans");
-    if (!admPane || admPane.classList.contains("hidden")) return;
-
-    const { state } = window.CC;
-    admPane.querySelectorAll(".item-box").forEach(card => {
-      const delBtn = card.querySelector("button[onclick^='askDeleteLoan']");
-      if (!delBtn) return;
-      const match = delBtn.getAttribute("onclick").match(/askDeleteLoan\('([^']+)'/);
-      if (!match) return;
-      const loanId = match[1];
-      const loan = state.loans[loanId];
-      if (!loan || !Array.isArray(loan.schedule)) return;
-
-      // Buscar cuotas que tengan reporte pendiente de aprobación (no pagadas aún)
-      const cuotasEnRevision = loan.schedule.filter(q =>
-        q.status !== "pagada" && (q.status === "revision" || q.status === "pagando" || q.payRef || q.payProof)
-      );
-
-      cuotasEnRevision.forEach(q => {
-        const btnId = `btnRejQ_${loanId}_${q.num}`;
-        if (document.getElementById(btnId)) return;
-
-        // Buscar la fila de esa cuota (C1/2, C2/2, etc.)
-        const rows = Array.from(card.querySelectorAll("div"));
-        const targetRow = rows.find(el =>
-          el.children.length > 0 &&
-          el.innerText &&
-          el.innerText.includes(`C${q.num}/`) &&
-          !el.querySelector(`#${btnId}`)
-        );
-
-        const rejBtn = document.createElement("button");
-        rejBtn.id = btnId;
-        rejBtn.type = "button";
-        rejBtn.className = "btn btn-sm btn-danger";
-        rejBtn.style.cssText = "margin-top:4px;margin-left:4px;padding:4px 8px;font-size:11px;";
-        rejBtn.textContent = `❌ Rechazar C${q.num}`;
-        rejBtn.onclick = () => window.rejectQuotaPayment(loanId, q.num);
-
-        if (targetRow) {
-          targetRow.appendChild(rejBtn);
-        } else {
-          delBtn.parentNode.insertBefore(rejBtn, delBtn);
-        }
-      });
-    });
-  }, 900);
+  setInterval(syncAllExtraFeatures, 800);
 })();
