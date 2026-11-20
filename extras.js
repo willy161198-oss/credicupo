@@ -1,6 +1,6 @@
 // ============================================================
 // MÓDULO ÚNICO Y DEFINITIVO - CREDICUPO EXPRESS
-// Menú Modular en Cliente + Menú Modular en Dueño + Blindaje Total
+// Sin bucle de observer + Menú Modular Cliente y Dueño + Blindaje
 // ============================================================
 import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -14,6 +14,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   let activeRuleTab = "datos_app";
   let activeClientTab = "paga_cuota";
   let clientTabInitializedFor = null;
+  let isSyncing = false;
 
   const NOMBRES_10_NIVELES = [
     "Burusa", "Basurita", "Piedrita", "Grava", "Cerro",
@@ -299,17 +300,26 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   }
 
   // ------------------------------------------------------------
-  // C. MENÚ MODULAR EN VISTA DEL CLIENTE (LOS 7 BOTONES)
+  // C. MENÚ MODULAR EN VISTA DEL CLIENTE (SIN BUCLE DE DOM)
   // ------------------------------------------------------------
+  function setHiddenSafe(el, shouldHide) {
+    if (!el) return;
+    if (shouldHide) {
+      if (!el.classList.contains("hidden")) el.classList.add("hidden");
+    } else {
+      if (el.classList.contains("hidden")) el.classList.remove("hidden");
+    }
+  }
+
   window.selectClientMenuTab = (tabKey) => {
     activeClientTab = tabKey;
-    applyClientMenuVisibility();
+    applyClientMenuVisibility(true);
     if (tabKey === "pedir_otro" && typeof window.updateExtraLoanCalc === "function") {
       window.updateExtraLoanCalc();
     }
   };
 
-  function applyClientMenuVisibility() {
+  function applyClientMenuVisibility(force = false) {
     if (!window.CC || !window.CC.state) return;
     const { state } = window.CC;
     const viewClient = document.getElementById("viewClient");
@@ -324,13 +334,12 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       .sort((a, b) => a.createdAt - b.createdAt);
     const hasPending = myLoans.some(l => l.status === "pendiente");
 
-    // Elegir pestaña inicial inteligente al entrar por primera vez
     if (clientTabInitializedFor !== u.cedula) {
       clientTabInitializedFor = u.cedula;
       activeClientTab = (activeLoans.length > 0 || hasPending) ? "paga_cuota" : "pedir_credito";
     }
 
-    // 1. Inyectar barra de 7 botones justo debajo de la tarjeta azul del cliente
+    // 1. Barra de 7 botones debajo de la tarjeta azul
     let navWrap = document.getElementById("clientModularNavCard");
     const heroCard = viewClient.querySelector(".hero-card, .card");
     if (!navWrap) {
@@ -346,7 +355,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     }
 
     const navSig = `${activeClientTab}|${activeLoans.length}|${hasPending ? 1 : 0}`;
-    if (navWrap.dataset.navSig !== navSig) {
+    if (force || navWrap.dataset.navSig !== navSig) {
       navWrap.dataset.navSig = navSig;
       const btnStyle = (key, extra = "") => {
         const activo = activeClientTab === key;
@@ -391,7 +400,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       `;
     }
 
-    // 2. Identificar las secciones originales de la vista cliente
+    // 2. Secciones de la vista cliente
     const reqBox = document.getElementById("cliRequestLoanBox") || document.getElementById("reqQuotaSelect")?.closest(".card");
     const actBox = document.getElementById("cliActiveLoanBox");
     const extraCard = document.getElementById("cliExtraParallelCard");
@@ -399,7 +408,6 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     const levelsCard = document.getElementById("cliLevelsList")?.closest(".card");
     const histCard = document.getElementById("cliHistoryList")?.closest(".card");
 
-    // Cajas auxiliares de aviso para Pedir Crédito, Pedir Otro Crédito y Términos
     let infoHelperCard = document.getElementById("cliModularHelperCard");
     if (!infoHelperCard) {
       infoHelperCard = document.createElement("div");
@@ -408,85 +416,82 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       viewClient.appendChild(infoHelperCard);
     }
 
-    // Ocultar todas las secciones secundarias antes de mostrar solo la elegida
-    if (reqBox) reqBox.classList.add("hidden");
-    if (actBox) actBox.classList.add("hidden");
-    if (extraCard) extraCard.classList.add("hidden");
-    if (payCard) payCard.classList.add("hidden");
-    if (levelsCard) levelsCard.classList.add("hidden");
-    if (histCard) histCard.classList.add("hidden");
-    infoHelperCard.classList.add("hidden");
+    const showReq = activeClientTab === "pedir_credito" && activeLoans.length === 0 && !hasPending && !!reqBox;
+    const showAct = activeClientTab === "paga_cuota" && !!actBox && (activeLoans.length > 0 || hasPending);
+    const showExtra = activeClientTab === "pedir_otro" && !!extraCard && activeLoans.length === 1 && !u.blocked;
+    const showPay = activeClientTab === "datos_cuentas" && !!payCard;
+    const showLevels = activeClientTab === "niveles" && !!levelsCard;
+    const showHist = activeClientTab === "niveles_anterior" && !!histCard;
 
-    // 3. Mostrar únicamente el bloque correspondiente al botón seleccionado
-    if (activeClientTab === "pedir_credito") {
-      if (activeLoans.length === 0 && !hasPending && reqBox) {
-        reqBox.classList.remove("hidden");
-      } else {
-        infoHelperCard.classList.remove("hidden");
-        infoHelperCard.innerHTML = `
-          <h3 class="card-title">💸 Solicitud de Crédito Principal</h3>
-          <div class="alert alert-info" style="margin-bottom:8px;font-size:12px;">
-            ${hasPending
-              ? "⏳ Ya tienes una solicitud en revisión. Apenas el dueño la apruebe podrás verla en <strong>Paga tu cuota</strong>."
-              : "✅ Ya tienes un crédito principal activo. Puedes pagarlo en <strong>Paga tu cuota</strong> o pedir un segundo préstamo en <strong>Pedir otro crédito</strong>."}
-          </div>
-          <div class="grid-2">
-            <button type="button" class="btn btn-primary" style="margin-top:0;" onclick="selectClientMenuTab('paga_cuota')">Ir a Paga tu cuota</button>
-            <button type="button" class="btn btn-secondary" style="margin-top:0;" onclick="selectClientMenuTab('pedir_otro')">Pedir otro crédito</button>
-          </div>
-        `;
-      }
-    } else if (activeClientTab === "paga_cuota") {
-      if (actBox && (activeLoans.length > 0 || hasPending)) {
-        actBox.classList.remove("hidden");
-      } else {
-        infoHelperCard.classList.remove("hidden");
-        infoHelperCard.innerHTML = `
-          <h3 class="card-title">💳 Paga tu Cuota</h3>
-          <div class="alert alert-info" style="margin-bottom:8px;font-size:12px;">
-            No tienes cuotas pendientes por pagar en este momento.
-          </div>
-          <button type="button" class="btn btn-primary" onclick="selectClientMenuTab('pedir_credito')">Solicitar un Crédito Ahora</button>
-        `;
-      }
-    } else if (activeClientTab === "pedir_otro") {
-      if (extraCard && activeLoans.length === 1 && !u.blocked) {
-        extraCard.classList.remove("hidden");
-        const formWrap = document.getElementById("extraParallelForm");
-        if (formWrap) formWrap.classList.remove("hidden");
-      } else {
-        infoHelperCard.classList.remove("hidden");
-        let msg = "Para pedir un crédito adicional debes tener primero tu crédito principal activo.";
-        if (activeLoans.length >= 2) {
-          msg = "⛔ Ya tienes activos tu crédito principal y tu crédito adicional (máximo 2 créditos simultáneos).";
-        } else if (hasPending) {
-          msg = "⏳ Ya tienes una solicitud pendiente en revisión por el dueño.";
+    setHiddenSafe(reqBox, !showReq);
+    setHiddenSafe(actBox, !showAct);
+    setHiddenSafe(extraCard, !showExtra);
+    setHiddenSafe(payCard, !showPay);
+    setHiddenSafe(levelsCard, !showLevels);
+    setHiddenSafe(histCard, !showHist);
+
+    if (showLevels) {
+      setHiddenSafe(document.getElementById("cliLevelsList"), false);
+    }
+    if (showExtra) {
+      setHiddenSafe(document.getElementById("extraParallelForm"), false);
+    }
+
+    const needsHelper =
+      (activeClientTab === "pedir_credito" && !showReq) ||
+      (activeClientTab === "paga_cuota" && !showAct) ||
+      (activeClientTab === "pedir_otro" && !showExtra) ||
+      activeClientTab === "terminos";
+
+    setHiddenSafe(infoHelperCard, !needsHelper);
+
+    if (needsHelper) {
+      const helperSig = `${activeClientTab}|${activeLoans.length}|${hasPending ? 1 : 0}|${state.cfg?.termsText || ""}`;
+      if (force || infoHelperCard.dataset.helperSig !== helperSig) {
+        infoHelperCard.dataset.helperSig = helperSig;
+        if (activeClientTab === "pedir_credito") {
+          infoHelperCard.innerHTML = `
+            <h3 class="card-title">💸 Solicitud de Crédito Principal</h3>
+            <div class="alert alert-info" style="margin-bottom:8px;font-size:12px;">
+              ${hasPending
+                ? "⏳ Ya tienes una solicitud en revisión. Apenas el dueño la apruebe podrás verla en <strong>Paga tu cuota</strong>."
+                : "✅ Ya tienes un crédito principal activo. Puedes pagarlo en <strong>Paga tu cuota</strong> o pedir un segundo préstamo en <strong>Pedir otro crédito</strong>."}
+            </div>
+            <div class="grid-2">
+              <button type="button" class="btn btn-primary" style="margin-top:0;" onclick="selectClientMenuTab('paga_cuota')">Ir a Paga tu cuota</button>
+              <button type="button" class="btn btn-secondary" style="margin-top:0;" onclick="selectClientMenuTab('pedir_otro')">Pedir otro crédito</button>
+            </div>
+          `;
+        } else if (activeClientTab === "paga_cuota") {
+          infoHelperCard.innerHTML = `
+            <h3 class="card-title">💳 Paga tu Cuota</h3>
+            <div class="alert alert-info" style="margin-bottom:8px;font-size:12px;">
+              No tienes cuotas pendientes por pagar en este momento.
+            </div>
+            <button type="button" class="btn btn-primary" onclick="selectClientMenuTab('pedir_credito')">Solicitar un Crédito Ahora</button>
+          `;
+        } else if (activeClientTab === "pedir_otro") {
+          let msg = "Para pedir un crédito adicional debes tener primero tu crédito principal activo.";
+          if (activeLoans.length >= 2) {
+            msg = "⛔ Ya tienes activos tu crédito principal y tu crédito adicional (máximo 2 créditos simultáneos).";
+          } else if (hasPending) {
+            msg = "⏳ Ya tienes una solicitud pendiente en revisión por el dueño.";
+          }
+          infoHelperCard.innerHTML = `
+            <h3 class="card-title">➕ Pedir Otro Crédito</h3>
+            <div class="alert alert-warn" style="margin-bottom:8px;font-size:12px;">${msg}</div>
+            <button type="button" class="btn btn-primary" onclick="selectClientMenuTab('${activeLoans.length === 0 ? "pedir_credito" : "paga_cuota"}')">
+              ${activeLoans.length === 0 ? "Pedir Crédito Principal" : "Ver Mis Cuotas"}
+            </button>
+          `;
+        } else if (activeClientTab === "terminos") {
+          const terms = (state.cfg?.termsText || "Al solicitar un crédito en CrediCupo Express aceptas pagar tus cuotas puntualmente en las fechas acordadas.").trim();
+          infoHelperCard.innerHTML = `
+            <h3 class="card-title">📜 Términos y Condiciones</h3>
+            <div style="font-size:12px;line-height:1.5;color:#1E293B;background:#F8FAFC;border:1px solid #CBD5E1;border-radius:10px;padding:12px;white-space:pre-line;">${terms}</div>
+          `;
         }
-        infoHelperCard.innerHTML = `
-          <h3 class="card-title">➕ Pedir Otro Crédito</h3>
-          <div class="alert alert-warn" style="margin-bottom:8px;font-size:12px;">${msg}</div>
-          <button type="button" class="btn btn-primary" onclick="selectClientMenuTab('${activeLoans.length === 0 ? "pedir_credito" : "paga_cuota"}')">
-            ${activeLoans.length === 0 ? "Pedir Crédito Principal" : "Ver Mis Cuotas"}
-          </button>
-        `;
       }
-    } else if (activeClientTab === "datos_cuentas") {
-      if (payCard) payCard.classList.remove("hidden");
-    } else if (activeClientTab === "niveles") {
-      if (levelsCard) {
-        levelsCard.classList.remove("hidden");
-        const listEl = document.getElementById("cliLevelsList");
-        if (listEl) listEl.classList.remove("hidden");
-      }
-    } else if (activeClientTab === "niveles_anterior") {
-      if (histCard) histCard.classList.remove("hidden");
-    } else if (activeClientTab === "terminos") {
-      const terms = (state.cfg?.termsText || "Al solicitar un crédito en CrediCupo Express aceptas pagar tus cuotas puntualmente en las fechas acordadas.").trim();
-      infoHelperCard.classList.remove("hidden");
-      infoHelperCard.innerHTML = `
-        <h3 class="card-title">📜 Términos y Condiciones</h3>
-        <div style="font-size:12px;line-height:1.5;color:#1E293B;background:#F8FAFC;border:1px solid #CBD5E1;border-radius:10px;padding:12px;white-space:pre-line;">${terms}</div>
-      `;
     }
   }
 
@@ -655,8 +660,8 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     }
 
     Array.from(cfgPane.children).forEach(ch => {
-      if (ch.id !== "modularRulesWrapper" && !ch.classList.contains("hidden")) {
-        ch.classList.add("hidden");
+      if (ch.id !== "modularRulesWrapper") {
+        setHiddenSafe(ch, true);
       }
     });
 
@@ -1055,7 +1060,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
       const body = `${u.nombre} (V-${u.cedula}) pidió $${rule.amount.toFixed(2)} USD en ${q} cuota(s).`;
       await window.sendOwnerTelegramAlert(`<b>${title}</b>\n${body}`, title, body);
       activeClientTab = "paga_cuota";
-      applyClientMenuVisibility();
+      applyClientMenuVisibility(true);
     };
     wrappedReq._notifWrapped = true;
     window.requestLoan = wrappedReq;
@@ -1588,7 +1593,7 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
     await window.sendOwnerTelegramAlert(`<b>${title}</b>\n${body}`, title, body);
 
     activeClientTab = "paga_cuota";
-    applyClientMenuVisibility();
+    applyClientMenuVisibility(true);
     showToast(`✅ Solicitud enviada (+${rule.interest}% interés)`);
   };
 
@@ -1767,377 +1772,372 @@ import { doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebase
   }
 
   async function syncAllExtraFeatures() {
+    if (isSyncing) return;
     if (!window.CC || !window.CC.state || !window.CC.state.loadedCfg) return;
-    const { db, state, showToast } = window.CC;
-    const c = state.cfg;
 
-    // Reparar automáticamente la propiedad lvl en niveles si falta
-    if (Array.isArray(c.levels) && c.levels.some(item => item && !item.lvl)) {
-      const reparados = c.levels.map((item, idx) => ({
-        ...item,
-        lvl: idx + 1,
-        level: idx + 1,
-        pct: Number(item.pct ?? item.interest ?? 23),
-        interest: Number(item.pct ?? item.interest ?? 23)
-      }));
-      guardarParcialBlindado({ levels: reparados }).catch(() => {});
-    }
+    isSyncing = true;
+    try {
+      const { db, state, showToast } = window.CC;
+      const c = state.cfg;
 
-    if (typeof window.CC.refreshUI === "function" && !window.CC.refreshUI._gananciaWrapped) {
-      const origRefresh = window.CC.refreshUI;
-      const wrappedRefresh = function (...args) {
-        const res = origRefresh.apply(this, args);
-        pintarGananciaEnPantalla();
-        renderModularRulesPanel(false);
-        applyClientMenuVisibility();
-        return res;
-      };
-      wrappedRefresh._gananciaWrapped = true;
-      window.CC.refreshUI = wrappedRefresh;
-    }
+      // Reparar automáticamente la propiedad lvl en niveles si falta
+      if (Array.isArray(c.levels) && c.levels.some(item => item && !item.lvl)) {
+        const reparados = c.levels.map((item, idx) => ({
+          ...item,
+          lvl: idx + 1,
+          level: idx + 1,
+          pct: Number(item.pct ?? item.interest ?? 23),
+          interest: Number(item.pct ?? item.interest ?? 23)
+        }));
+        guardarParcialBlindado({ levels: reparados }).catch(() => {});
+      }
 
-    // Blindaje anti-borrado total (niveles, Pago Móvil, UBII, Telegram, etc.)
-    const nivelesIncompletos = !Array.isArray(c.levels) || c.levels.length === 0 || Number(c.levels[0]?.amount || 0) <= 0;
-    const datosFaltantes = !c.ownerPm || !c.ownerUbii || !c.tgBotToken || !c.tgOwnerChatId;
+      if (typeof window.CC.refreshUI === "function" && !window.CC.refreshUI._gananciaWrapped) {
+        const origRefresh = window.CC.refreshUI;
+        const wrappedRefresh = function (...args) {
+          const res = origRefresh.apply(this, args);
+          pintarGananciaEnPantalla();
+          renderModularRulesPanel(false);
+          applyClientMenuVisibility(false);
+          return res;
+        };
+        wrappedRefresh._gananciaWrapped = true;
+        window.CC.refreshUI = wrappedRefresh;
+      }
 
-    if (!restaurandoCfg && (nivelesIncompletos || datosFaltantes)) {
-      restaurandoCfg = true;
-      try {
-        const snap = await getDoc(doc(db, "credicupo", "backup_config"));
-        if (snap.exists()) {
-          const bkp = snap.data();
-          if (bkp.ownerPm || bkp.ownerUbii || bkp.tgBotToken || (Array.isArray(bkp.levels) && bkp.levels.length > 0)) {
-            const { updatedAt, rate, ...restaurado } = bkp;
-            if (Array.isArray(restaurado.levels)) {
-              restaurado.levels = restaurado.levels.map((item, idx) => ({
-                ...item,
-                lvl: idx + 1,
-                level: idx + 1
-              }));
+      // Blindaje anti-borrado total (niveles, Pago Móvil, UBII, Telegram, etc.)
+      const nivelesIncompletos = !Array.isArray(c.levels) || c.levels.length === 0 || Number(c.levels[0]?.amount || 0) <= 0;
+      const datosFaltantes = !c.ownerPm || !c.ownerUbii || !c.tgBotToken || !c.tgOwnerChatId;
+
+      if (!restaurandoCfg && (nivelesIncompletos || datosFaltantes)) {
+        restaurandoCfg = true;
+        try {
+          const snap = await getDoc(doc(db, "credicupo", "backup_config"));
+          if (snap.exists()) {
+            const bkp = snap.data();
+            if (bkp.ownerPm || bkp.ownerUbii || bkp.tgBotToken || (Array.isArray(bkp.levels) && bkp.levels.length > 0)) {
+              const { updatedAt, rate, ...restaurado } = bkp;
+              if (Array.isArray(restaurado.levels)) {
+                restaurado.levels = restaurado.levels.map((item, idx) => ({
+                  ...item,
+                  lvl: idx + 1,
+                  level: idx + 1
+                }));
+              }
+              const cfgFinal = {
+                ...c,
+                ...restaurado,
+                rate: c.rate || bkp.rate
+              };
+              await setDoc(doc(db, "credicupo", "config"), cfgFinal, { merge: true });
+              state.cfg = cfgFinal;
+              renderModularRulesPanel(true);
             }
-            const cfgFinal = {
-              ...c,
-              ...restaurado,
-              rate: c.rate || bkp.rate
-            };
-            await setDoc(doc(db, "credicupo", "config"), cfgFinal, { merge: true });
-            state.cfg = cfgFinal;
-            renderModularRulesPanel(true);
           }
+        } catch (e) {} finally {
+          setTimeout(() => { restaurandoCfg = false; }, 4000);
         }
-      } catch (e) {} finally {
-        setTimeout(() => { restaurandoCfg = false; }, 4000);
-      }
-    }
-
-    renderModularRulesPanel(false);
-    injectClientPayEditor();
-
-    // Capturar Chat ID de Telegram del cliente
-    if (state.currentUserCedula && state.users[state.currentUserCedula]) {
-      const u = state.users[state.currentUserCedula];
-      const currentTgId = getCurrentTelegramUserId();
-      if (currentTgId && u.tgChatId !== currentTgId && !u._savingTgId) {
-        u._savingTgId = true;
-        updateDoc(doc(db, "users", u.cedula), { tgChatId: currentTgId }).catch(() => {});
-      }
-    }
-
-    // Vista del Cliente
-    const viewClient = document.getElementById("viewClient");
-    const actBox = document.getElementById("cliActiveLoanBox");
-
-    if (viewClient && !viewClient.classList.contains("hidden") && state.currentUserCedula) {
-      const u = state.users[state.currentUserCedula];
-      const myLoans = Object.values(state.loans || {}).filter(l => l.cedula === state.currentUserCedula);
-      const activeLoans = myLoans
-        .filter(l => ["activo", "pagando"].includes(l.status))
-        .sort((a, b) => a.createdAt - b.createdAt);
-      const hasPending = myLoans.some(l => l.status === "pendiente");
-
-      let switcher = document.getElementById("multiLoanSwitcher");
-      if (actBox && activeLoans.length > 1) {
-        if (!selectedActiveLoanId || !activeLoans.some(l => l.id === selectedActiveLoanId)) {
-          selectedActiveLoanId = activeLoans[0].id;
-        }
-        if (!switcher) {
-          switcher = document.createElement("div");
-          switcher.id = "multiLoanSwitcher";
-          switcher.style.cssText = "display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;";
-          actBox.insertBefore(switcher, actBox.firstChild);
-        }
-        const swSig = activeLoans.map(l => `${l.id}-${l.id === selectedActiveLoanId ? 1 : 0}`).join("|");
-        if (switcher.dataset.sig !== swSig) {
-          switcher.dataset.sig = swSig;
-          switcher.innerHTML = activeLoans.map((l, i) => `
-            <button type="button" class="btn btn-sm ${l.id === selectedActiveLoanId ? "btn-primary" : "btn-secondary"}"
-              style="margin-top:0;flex:1;"
-              onclick="window._selectClientLoan('${l.id}')">
-              Crédito #${i + 1} ($${Number(l.amount).toFixed(2)})
-            </button>
-          `).join("");
-        }
-      } else if (switcher) {
-        switcher.remove();
       }
 
-      if (actBox) {
-        const infoAlert = actBox.querySelector(".alert.alert-info");
-        if (infoAlert) {
-          const curTitle = (infoAlert.innerText.match(/Paga tu Cuota[^\n]+/) || [""])[0];
-          if (infoAlert.dataset.cleanBoxDone !== curTitle) {
-            renderCleanClientPayBox(infoAlert, c);
+      renderModularRulesPanel(false);
+      injectClientPayEditor();
+
+      // Capturar Chat ID de Telegram del cliente
+      if (state.currentUserCedula && state.users[state.currentUserCedula]) {
+        const u = state.users[state.currentUserCedula];
+        const currentTgId = getCurrentTelegramUserId();
+        if (currentTgId && u.tgChatId !== currentTgId && !u._savingTgId) {
+          u._savingTgId = true;
+          updateDoc(doc(db, "users", u.cedula), { tgChatId: currentTgId }).catch(() => {});
+        }
+      }
+
+      // Vista del Cliente
+      const viewClient = document.getElementById("viewClient");
+      const actBox = document.getElementById("cliActiveLoanBox");
+
+      if (viewClient && !viewClient.classList.contains("hidden") && state.currentUserCedula) {
+        const u = state.users[state.currentUserCedula];
+        const myLoans = Object.values(state.loans || {}).filter(l => l.cedula === state.currentUserCedula);
+        const activeLoans = myLoans
+          .filter(l => ["activo", "pagando"].includes(l.status))
+          .sort((a, b) => a.createdAt - b.createdAt);
+        const hasPending = myLoans.some(l => l.status === "pendiente");
+
+        let switcher = document.getElementById("multiLoanSwitcher");
+        if (actBox && activeLoans.length > 1) {
+          if (!selectedActiveLoanId || !activeLoans.some(l => l.id === selectedActiveLoanId)) {
+            selectedActiveLoanId = activeLoans[0].id;
           }
-        }
-
-        const activeLoan = activeLoans.find(l => l.id === selectedActiveLoanId) || activeLoans[activeLoans.length - 1];
-        injectExtensionWidgetInClient(activeLoan, c);
-
-        if (activeLoan && activeLoan.disburseProof && !document.getElementById("cliDisbProofBtn")) {
-          const strip = actBox.querySelector(".summary-strip");
-          if (strip) {
-            const btnWrap = document.createElement("div");
-            btnWrap.id = "cliDisbProofBtn";
-            btnWrap.style.cssText = "margin-bottom:10px;";
-            btnWrap.innerHTML = `
-              <button type="button" class="btn btn-sm btn-secondary" style="width:100%;background:#E3FCEF;color:#006644;border:1px solid #B7EB8F;"
-                onclick="openPhoto('${activeLoan.disburseProof}', 'Comprobante de Desembolso • Ref: ${activeLoan.disburseRef || 'Pagado'}')">
-                🧾 Ver Capture de tu Préstamo Recibido ${activeLoan.disburseRef ? `(Ref: ${activeLoan.disburseRef})` : ''}
+          if (!switcher) {
+            switcher = document.createElement("div");
+            switcher.id = "multiLoanSwitcher";
+            switcher.style.cssText = "display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;";
+            actBox.insertBefore(switcher, actBox.firstChild);
+          }
+          const swSig = activeLoans.map(l => `${l.id}-${l.id === selectedActiveLoanId ? 1 : 0}`).join("|");
+          if (switcher.dataset.sig !== swSig) {
+            switcher.dataset.sig = swSig;
+            switcher.innerHTML = activeLoans.map((l, i) => `
+              <button type="button" class="btn btn-sm ${l.id === selectedActiveLoanId ? "btn-primary" : "btn-secondary"}"
+                style="margin-top:0;flex:1;"
+                onclick="window._selectClientLoan('${l.id}')">
+                Crédito #${i + 1} ($${Number(l.amount).toFixed(2)})
               </button>
-            `;
-            strip.parentNode.insertBefore(btnWrap, strip.nextSibling);
+            `).join("");
+          }
+        } else if (switcher) {
+          switcher.remove();
+        }
+
+        if (actBox) {
+          const infoAlert = actBox.querySelector(".alert.alert-info");
+          if (infoAlert) {
+            const curTitle = (infoAlert.innerText.match(/Paga tu Cuota[^\n]+/) || [""])[0];
+            if (infoAlert.dataset.cleanBoxDone !== curTitle) {
+              renderCleanClientPayBox(infoAlert, c);
+            }
+          }
+
+          const activeLoan = activeLoans.find(l => l.id === selectedActiveLoanId) || activeLoans[activeLoans.length - 1];
+          injectExtensionWidgetInClient(activeLoan, c);
+
+          if (activeLoan && activeLoan.disburseProof && !document.getElementById("cliDisbProofBtn")) {
+            const strip = actBox.querySelector(".summary-strip");
+            if (strip) {
+              const btnWrap = document.createElement("div");
+              btnWrap.id = "cliDisbProofBtn";
+              btnWrap.style.cssText = "margin-bottom:10px;";
+              btnWrap.innerHTML = `
+                <button type="button" class="btn btn-sm btn-secondary" style="width:100%;background:#E3FCEF;color:#006644;border:1px solid #B7EB8F;"
+                  onclick="openPhoto('${activeLoan.disburseProof}', 'Comprobante de Desembolso • Ref: ${activeLoan.disburseRef || 'Pagado'}')">
+                  🧾 Ver Capture de tu Préstamo Recibido ${activeLoan.disburseRef ? `(Ref: ${activeLoan.disburseRef})` : ''}
+                </button>
+              `;
+              strip.parentNode.insertBefore(btnWrap, strip.nextSibling);
+            }
           }
         }
-      }
 
-      // Tarjeta de crédito adicional: SOLO cuando activeLoans.length === 1
-      let addCard = document.getElementById("cliExtraParallelCard");
-      if (u && activeLoans.length === 1 && !u.blocked) {
-        if (!addCard) {
-          addCard = document.createElement("div");
-          addCard.id = "cliExtraParallelCard";
-          addCard.className = "card";
-          const payCard = document.getElementById("cliEditPayMethodCard");
-          const histCard = document.getElementById("cliHistoryList")?.closest(".card");
-          const refNode = payCard || histCard;
-          if (refNode) viewClient.insertBefore(addCard, refNode);
-          else viewClient.appendChild(addCard);
+        // Tarjeta de crédito adicional: SOLO cuando activeLoans.length === 1
+        let addCard = document.getElementById("cliExtraParallelCard");
+        if (u && activeLoans.length === 1 && !u.blocked) {
+          if (!addCard) {
+            addCard = document.createElement("div");
+            addCard.id = "cliExtraParallelCard";
+            addCard.className = "card";
+            const payCard = document.getElementById("cliEditPayMethodCard");
+            const histCard = document.getElementById("cliHistoryList")?.closest(".card");
+            const refNode = payCard || histCard;
+            if (refNode) viewClient.insertBefore(addCard, refNode);
+            else viewClient.appendChild(addCard);
+          }
+
+          const cardSig = `${u.cedula}-${u.level}-${hasPending ? 1 : 0}-${activeLoans.length}`;
+          if (addCard.dataset.sig !== cardSig) {
+            addCard.dataset.sig = cardSig;
+            if (hasPending) {
+              addCard.innerHTML = `
+                <div class="card-title" style="margin-bottom:4px;">
+                  <span>➕ Crédito Adicional</span>
+                  <span class="badge b-warn">EN REVISIÓN</span>
+                </div>
+                <div class="alert alert-warn" style="margin-bottom:0;font-size:12px;">
+                  ⏳ Ya tienes una solicitud adicional pendiente por aprobación del dueño.
+                </div>
+              `;
+            } else {
+              const avail = getAvailableLevelsUpTo(Number(u.level) || 1);
+              const optionsHtml = avail.slice().reverse().map(r =>
+                `<option value="${r.level}">Nivel ${r.level} • ${r.name} ($${r.amount.toFixed(2)} USD)</option>`
+              ).join("");
+
+              addCard.innerHTML = `
+                <div class="card-title" style="margin-bottom:6px;">
+                  <span>➕ Pedir Otro Crédito Activo</span>
+                </div>
+                <div style="font-size:12px;color:var(--muted);">
+                  Puedes solicitar 1 crédito adicional en tu nivel actual (<strong>Nivel ${u.level}</strong>) o en un nivel inferior.
+                </div>
+                <div id="extraParallelForm" style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px;">
+                  <label style="margin-top:0;">Elige el nivel del crédito adicional</label>
+                  <select id="extraLoanLevelSel" onchange="updateExtraLoanCalc()">
+                    ${optionsHtml}
+                  </select>
+                  <label>Cantidad de cuotas</label>
+                  <select id="extraLoanQuotaSel" onchange="updateExtraLoanCalc()"></select>
+                  <div id="extraLoanPreview" class="alert alert-info" style="margin-top:8px;margin-bottom:8px;font-size:12px;"></div>
+                  <button type="button" class="btn btn-primary" onclick="submitExtraParallelLoan()">
+                    Enviar Solicitud de Crédito Adicional
+                  </button>
+                </div>
+              `;
+              setTimeout(() => window.updateExtraLoanCalc(), 50);
+            }
+          }
+        } else if (addCard) {
+          addCard.remove();
         }
 
-        const cardSig = `${u.cedula}-${u.level}-${hasPending ? 1 : 0}-${activeLoans.length}`;
-        if (addCard.dataset.sig !== cardSig) {
-          addCard.dataset.sig = cardSig;
-          if (hasPending) {
-            addCard.innerHTML = `
-              <div class="card-title" style="margin-bottom:4px;">
-                <span>➕ Crédito Adicional</span>
-                <span class="badge b-warn">EN REVISIÓN</span>
-              </div>
-              <div class="alert alert-warn" style="margin-bottom:0;font-size:12px;">
-                ⏳ Ya tienes una solicitud adicional pendiente por aprobación del dueño.
+        applyClientMenuVisibility(false);
+      }
+
+      pintarGananciaEnPantalla();
+
+      // Vista del Dueño: Préstamos
+      const admPane = document.getElementById("admPaneLoans");
+      if (admPane && !admPane.classList.contains("hidden")) {
+        admPane.querySelectorAll(".item-box").forEach(card => {
+          const delBtn = card.querySelector("button[onclick^='askDeleteLoan']");
+          if (!delBtn) return;
+          const match = delBtn.getAttribute("onclick").match(/askDeleteLoan\('([^']+)'/);
+          if (!match) return;
+          const loan = state.loans[match[1]];
+          if (!loan) return;
+
+          const cuotasEnRevision = (loan.schedule || []).filter(q =>
+            q.status !== "pagada" && (q.status === "revision" || q.status === "pagando" || q.payRef || q.payProof)
+          );
+          cuotasEnRevision.forEach(q => {
+            const btnId = `btnRejQ_${loan.id}_${q.num}`;
+            if (document.getElementById(btnId)) return;
+
+            const rows = Array.from(card.querySelectorAll("div"));
+            const targetRow = rows.find(el =>
+              el.children.length > 0 &&
+              el.innerText &&
+              el.innerText.includes(`C${q.num}/`) &&
+              !el.querySelector(`#${btnId}`)
+            );
+
+            const rejBtn = document.createElement("button");
+            rejBtn.id = btnId;
+            rejBtn.type = "button";
+            rejBtn.className = "btn btn-sm btn-danger";
+            rejBtn.style.cssText = "margin-top:4px;margin-left:4px;padding:4px 8px;font-size:11px;";
+            rejBtn.textContent = `❌ Rechazar C${q.num}`;
+            rejBtn.onclick = () => window.rejectQuotaPayment(loan.id, q.num);
+
+            if (targetRow) targetRow.appendChild(rejBtn);
+            else delBtn.parentNode.insertBefore(rejBtn, delBtn);
+          });
+
+          const extQ = (loan.schedule || []).find(q => q.extStatus === "pendiente");
+          let extAdminBanner = card.querySelector(".admin-ext-banner");
+          if (extQ) {
+            const extSig = `${loan.id}-${extQ.num}-${extQ.extDays}-${extQ.extNewAmt}`;
+            if (!extAdminBanner || extAdminBanner.dataset.sig !== extSig) {
+              if (!extAdminBanner) {
+                extAdminBanner = document.createElement("div");
+                extAdminBanner.className = "admin-ext-banner";
+                extAdminBanner.style.cssText = "background:#FFFBEB;border:1px solid #F59E0B;border-radius:9px;padding:9px;margin:8px 0;font-size:12px;";
+                card.appendChild(extAdminBanner);
+              }
+              extAdminBanner.dataset.sig = extSig;
+              extAdminBanner.innerHTML = `
+                <div style="font-weight:800;color:#92400E;margin-bottom:4px;">
+                  ⏳ Solicitud de Prórroga: Cuota #${extQ.num} (+${extQ.extDays} día${extQ.extDays > 1 ? "s" : ""})
+                </div>
+                <div style="margin-bottom:6px;">
+                  Sube de <strong>$${Number(extQ.extOldAmt).toFixed(2)}</strong> a <strong>$${Number(extQ.extNewAmt).toFixed(2)} USD</strong> (+${extQ.extDays * extQ.extPctPerDay}%)
+                </div>
+                <div class="grid-2">
+                  <button type="button" class="btn btn-sm btn-primary" style="margin-top:0;" onclick="decideQuotaExtension('${loan.id}', ${extQ.num}, true)">✅ Aprobar</button>
+                  <button type="button" class="btn btn-sm btn-danger" style="margin-top:0;" onclick="decideQuotaExtension('${loan.id}', ${extQ.num}, false)">❌ Rechazar</button>
+                </div>
+              `;
+            }
+          } else if (extAdminBanner) {
+            extAdminBanner.remove();
+          }
+
+          if (card.dataset.disbChecked) return;
+          card.dataset.disbChecked = "1";
+
+          const copyAccBtn = document.createElement("button");
+          copyAccBtn.type = "button";
+          copyAccBtn.className = "btn btn-sm btn-secondary";
+          copyAccBtn.textContent = "📋 Copiar Cuenta";
+          copyAccBtn.onclick = () => window.ccCopyText(loan.payInfo, "Cuenta cliente");
+          delBtn.parentNode.insertBefore(copyAccBtn, delBtn);
+
+          if (loan.disburseProof) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "btn btn-sm btn-secondary";
+            btn.textContent = "Ver Mi Capture";
+            btn.onclick = () => window.openPhoto(loan.disburseProof, `Desembolso a ${loan.nombre} • Ref: ${loan.disburseRef || 'N/A'}`);
+            delBtn.parentNode.insertBefore(btn, delBtn);
+          }
+        });
+      }
+
+      // Vista del Dueño: Clientes
+      const usersPane = document.getElementById("admPaneUsers");
+      if (usersPane && !usersPane.classList.contains("hidden")) {
+        usersPane.querySelectorAll(".item-box").forEach(card => {
+          const text = card.innerText || "";
+          const cedMatch = text.match(/V-(\d{6,9})/);
+          if (!cedMatch) return;
+          const ced = cedMatch[1];
+          const u = state.users[ced];
+          if (!u) return;
+
+          const permSig = `${ced}-${u.canEditProfile ? 1 : 0}-${u.editRequestNote || ""}`;
+          let permBox = card.querySelector(".admin-edit-perm-box");
+          if (permBox && permBox.dataset.sig === permSig) return;
+          if (!permBox) {
+            permBox = document.createElement("div");
+            permBox.className = "admin-edit-perm-box";
+            permBox.style.cssText = "margin-top:8px;padding-top:8px;border-top:1px dashed #E2E8F0;";
+            card.appendChild(permBox);
+          }
+          permBox.dataset.sig = permSig;
+
+          if (u.canEditProfile) {
+            permBox.innerHTML = `
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                <span style="font-size:11px;font-weight:700;color:#006644;">🔓 Edición de datos activa</span>
+                <button type="button" class="btn btn-sm btn-secondary" style="margin-top:0;" onclick="grantClientEditPermission('${ced}', false)">🔒 Cerrar Candado</button>
               </div>
             `;
           } else {
-            const avail = getAvailableLevelsUpTo(Number(u.level) || 1);
-            const optionsHtml = avail.slice().reverse().map(r =>
-              `<option value="${r.level}">Nivel ${r.level} • ${r.name} ($${r.amount.toFixed(2)} USD)</option>`
-            ).join("");
-
-            addCard.innerHTML = `
-              <div class="card-title" style="margin-bottom:6px;">
-                <span>➕ Pedir Otro Crédito Activo</span>
-              </div>
-              <div style="font-size:12px;color:var(--muted);">
-                Puedes solicitar 1 crédito adicional en tu nivel actual (<strong>Nivel ${u.level}</strong>) o en un nivel inferior.
-              </div>
-              <div id="extraParallelForm" style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px;">
-                <label style="margin-top:0;">Elige el nivel del crédito adicional</label>
-                <select id="extraLoanLevelSel" onchange="updateExtraLoanCalc()">
-                  ${optionsHtml}
-                </select>
-                <label>Cantidad de cuotas</label>
-                <select id="extraLoanQuotaSel" onchange="updateExtraLoanCalc()"></select>
-                <div id="extraLoanPreview" class="alert alert-info" style="margin-top:8px;margin-bottom:8px;font-size:12px;"></div>
-                <button type="button" class="btn btn-primary" onclick="submitExtraParallelLoan()">
-                  Enviar Solicitud de Crédito Adicional
-                </button>
-              </div>
+            permBox.innerHTML = `
+              ${u.editRequestNote ? `<div style="font-size:11px;color:#92400E;background:#FFFBEB;padding:5px 8px;border-radius:7px;margin-bottom:6px;">📩 Pide editar: <strong>"${u.editRequestNote}"</strong></div>` : ""}
+              <button type="button" class="btn btn-sm ${u.editRequestNote ? "btn-primary" : "btn-secondary"}" style="margin-top:0;width:100%;" onclick="grantClientEditPermission('${ced}', true)">
+                🔓 Dar Permiso para Editar Datos / Cuenta
+              </button>
             `;
-            setTimeout(() => window.updateExtraLoanCalc(), 50);
           }
-        }
-      } else if (addCard) {
-        addCard.remove();
-      }
-
-      applyClientMenuVisibility();
-    }
-
-    pintarGananciaEnPantalla();
-
-    // Vista del Dueño: Préstamos
-    const admPane = document.getElementById("admPaneLoans");
-    if (admPane && !admPane.classList.contains("hidden")) {
-      admPane.querySelectorAll(".item-box").forEach(card => {
-        const delBtn = card.querySelector("button[onclick^='askDeleteLoan']");
-        if (!delBtn) return;
-        const match = delBtn.getAttribute("onclick").match(/askDeleteLoan\('([^']+)'/);
-        if (!match) return;
-        const loan = state.loans[match[1]];
-        if (!loan) return;
-
-        // Botón rojo ❌ Rechazar para cuotas reportadas por error
-        const cuotasEnRevision = (loan.schedule || []).filter(q =>
-          q.status !== "pagada" && (q.status === "revision" || q.status === "pagando" || q.payRef || q.payProof)
-        );
-        cuotasEnRevision.forEach(q => {
-          const btnId = `btnRejQ_${loan.id}_${q.num}`;
-          if (document.getElementById(btnId)) return;
-
-          const rows = Array.from(card.querySelectorAll("div"));
-          const targetRow = rows.find(el =>
-            el.children.length > 0 &&
-            el.innerText &&
-            el.innerText.includes(`C${q.num}/`) &&
-            !el.querySelector(`#${btnId}`)
-          );
-
-          const rejBtn = document.createElement("button");
-          rejBtn.id = btnId;
-          rejBtn.type = "button";
-          rejBtn.className = "btn btn-sm btn-danger";
-          rejBtn.style.cssText = "margin-top:4px;margin-left:4px;padding:4px 8px;font-size:11px;";
-          rejBtn.textContent = `❌ Rechazar C${q.num}`;
-          rejBtn.onclick = () => window.rejectQuotaPayment(loan.id, q.num);
-
-          if (targetRow) targetRow.appendChild(rejBtn);
-          else delBtn.parentNode.insertBefore(rejBtn, delBtn);
         });
-
-        // Banner de prórroga pendiente
-        const extQ = (loan.schedule || []).find(q => q.extStatus === "pendiente");
-        let extAdminBanner = card.querySelector(".admin-ext-banner");
-        if (extQ) {
-          const extSig = `${loan.id}-${extQ.num}-${extQ.extDays}-${extQ.extNewAmt}`;
-          if (!extAdminBanner || extAdminBanner.dataset.sig !== extSig) {
-            if (!extAdminBanner) {
-              extAdminBanner = document.createElement("div");
-              extAdminBanner.className = "admin-ext-banner";
-              extAdminBanner.style.cssText = "background:#FFFBEB;border:1px solid #F59E0B;border-radius:9px;padding:9px;margin:8px 0;font-size:12px;";
-              card.appendChild(extAdminBanner);
-            }
-            extAdminBanner.dataset.sig = extSig;
-            extAdminBanner.innerHTML = `
-              <div style="font-weight:800;color:#92400E;margin-bottom:4px;">
-                ⏳ Solicitud de Prórroga: Cuota #${extQ.num} (+${extQ.extDays} día${extQ.extDays > 1 ? "s" : ""})
-              </div>
-              <div style="margin-bottom:6px;">
-                Sube de <strong>$${Number(extQ.extOldAmt).toFixed(2)}</strong> a <strong>$${Number(extQ.extNewAmt).toFixed(2)} USD</strong> (+${extQ.extDays * extQ.extPctPerDay}%)
-              </div>
-              <div class="grid-2">
-                <button type="button" class="btn btn-sm btn-primary" style="margin-top:0;" onclick="decideQuotaExtension('${loan.id}', ${extQ.num}, true)">✅ Aprobar</button>
-                <button type="button" class="btn btn-sm btn-danger" style="margin-top:0;" onclick="decideQuotaExtension('${loan.id}', ${extQ.num}, false)">❌ Rechazar</button>
-              </div>
-            `;
-          }
-        } else if (extAdminBanner) {
-          extAdminBanner.remove();
-        }
-
-        if (card.dataset.disbChecked) return;
-        card.dataset.disbChecked = "1";
-
-        const copyAccBtn = document.createElement("button");
-        copyAccBtn.type = "button";
-        copyAccBtn.className = "btn btn-sm btn-secondary";
-        copyAccBtn.textContent = "📋 Copiar Cuenta";
-        copyAccBtn.onclick = () => window.ccCopyText(loan.payInfo, "Cuenta cliente");
-        delBtn.parentNode.insertBefore(copyAccBtn, delBtn);
-
-        if (loan.disburseProof) {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "btn btn-sm btn-secondary";
-          btn.textContent = "Ver Mi Capture";
-          btn.onclick = () => window.openPhoto(loan.disburseProof, `Desembolso a ${loan.nombre} • Ref: ${loan.disburseRef || 'N/A'}`);
-          delBtn.parentNode.insertBefore(btn, delBtn);
-        }
-      });
-    }
-
-    // Vista del Dueño: Clientes (Permiso de edición)
-    const usersPane = document.getElementById("admPaneUsers");
-    if (usersPane && !usersPane.classList.contains("hidden")) {
-      usersPane.querySelectorAll(".item-box").forEach(card => {
-        const text = card.innerText || "";
-        const cedMatch = text.match(/V-(\d{6,9})/);
-        if (!cedMatch) return;
-        const ced = cedMatch[1];
-        const u = state.users[ced];
-        if (!u) return;
-
-        const permSig = `${ced}-${u.canEditProfile ? 1 : 0}-${u.editRequestNote || ""}`;
-        let permBox = card.querySelector(".admin-edit-perm-box");
-        if (permBox && permBox.dataset.sig === permSig) return;
-        if (!permBox) {
-          permBox = document.createElement("div");
-          permBox.className = "admin-edit-perm-box";
-          permBox.style.cssText = "margin-top:8px;padding-top:8px;border-top:1px dashed #E2E8F0;";
-          card.appendChild(permBox);
-        }
-        permBox.dataset.sig = permSig;
-
-        if (u.canEditProfile) {
-          permBox.innerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
-              <span style="font-size:11px;font-weight:700;color:#006644;">🔓 Edición de datos activa</span>
-              <button type="button" class="btn btn-sm btn-secondary" style="margin-top:0;" onclick="grantClientEditPermission('${ced}', false)">🔒 Cerrar Candado</button>
-            </div>
-          `;
-        } else {
-          permBox.innerHTML = `
-            ${u.editRequestNote ? `<div style="font-size:11px;color:#92400E;background:#FFFBEB;padding:5px 8px;border-radius:7px;margin-bottom:6px;">📩 Pide editar: <strong>"${u.editRequestNote}"</strong></div>` : ""}
-            <button type="button" class="btn btn-sm ${u.editRequestNote ? "btn-primary" : "btn-secondary"}" style="margin-top:0;width:100%;" onclick="grantClientEditPermission('${ced}', true)">
-              🔓 Dar Permiso para Editar Datos / Cuenta
-            </button>
-          `;
-        }
-      });
-    }
-
-    // Alertas sonoras en vivo
-    const loansArr = Object.values(state.loans || {});
-    const pendCount = loansArr.filter(l => l.status === "pendiente").length;
-    const revCount = loansArr.filter(l => l.status === "pagando").length;
-    const extCount = loansArr.filter(l => (l.schedule || []).some(q => q.extStatus === "pendiente")).length;
-    const sig = `${pendCount}-${revCount}-${extCount}`;
-    if (knownSig !== null && sig !== knownSig && state.isAdmin) {
-      playChime();
-      showToast(`🔔 ¡Novedad! (${pendCount} préstamos • ${revCount} pagos • ${extCount} prórrogas)`);
-    }
-    knownSig = sig;
-
-    if (state.currentUserCedula && !state.isAdmin) {
-      const myLoans = loansArr.filter(l => l.cedula === state.currentUserCedula);
-      const cliSig = myLoans.map(l => `${l.id}:${l.status}:${(l.schedule || []).map(q => `${q.status}-${q.extStatus || ""}`).join(",")}`).join("|");
-      if (clientKnownSig !== null && cliSig !== clientKnownSig) {
-        playChime();
-        showToast("🎉 ¡Tu cuenta fue actualizada! Revisa tu estado.");
       }
-      clientKnownSig = cliSig;
+
+      // Alertas sonoras en vivo
+      const loansArr = Object.values(state.loans || {});
+      const pendCount = loansArr.filter(l => l.status === "pendiente").length;
+      const revCount = loansArr.filter(l => l.status === "pagando").length;
+      const extCount = loansArr.filter(l => (l.schedule || []).some(q => q.extStatus === "pendiente")).length;
+      const sig = `${pendCount}-${revCount}-${extCount}`;
+      if (knownSig !== null && sig !== knownSig && state.isAdmin) {
+        playChime();
+        showToast(`🔔 ¡Novedad! (${pendCount} préstamos • ${revCount} pagos • ${extCount} prórrogas)`);
+      }
+      knownSig = sig;
+
+      if (state.currentUserCedula && !state.isAdmin) {
+        const myLoans = loansArr.filter(l => l.cedula === state.currentUserCedula);
+        const cliSig = myLoans.map(l => `${l.id}:${l.status}:${(l.schedule || []).map(q => `${q.status}-${q.extStatus || ""}`).join(",")}`).join("|");
+        if (clientKnownSig !== null && cliSig !== clientKnownSig) {
+          playChime();
+          showToast("🎉 ¡Tu cuenta fue actualizada! Revisa tu estado.");
+        }
+        clientKnownSig = cliSig;
+      }
+    } finally {
+      isSyncing = false;
     }
   }
 
-  // Solo observar cambios fuera de formularios activos para no cerrar el teclado móvil
-  const obs = new MutationObserver((mutations) => {
-    const wrap = document.getElementById("modularRulesWrapper");
-    const payCard = document.getElementById("cliEditPayMethodCard");
-    if (wrap && wrap.contains(document.activeElement)) return;
-    if (payCard && payCard.contains(document.activeElement)) return;
-    const soloDentroDeReglas = mutations.every(m => wrap && wrap.contains(m.target));
-    if (soloDentroDeReglas) return;
-    syncAllExtraFeatures();
-  });
-  obs.observe(document.body, { childList: true, subtree: true });
-  setInterval(syncAllExtraFeatures, 1000);
+  // Solo sincronizar cada 1.2s y nunca re-disparar por cambios propios del DOM
+  setInterval(syncAllExtraFeatures, 1200);
 })();
